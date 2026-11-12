@@ -1,6 +1,8 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <flutter/method_result_functions.h>
+#include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -25,6 +27,9 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  quit_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "notes/quit",
+      &flutter::StandardMethodCodec::GetInstance());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -40,6 +45,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  quit_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -51,6 +57,26 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == WM_CLOSE && quit_channel_) {
+    if (quit_pending_) return 0;
+    quit_pending_ = true;
+    quit_channel_->InvokeMethod(
+        "prepareToQuit", nullptr,
+        std::make_unique<flutter::MethodResultFunctions<flutter::EncodableValue>>(
+            [this, hwnd](const flutter::EncodableValue* value) {
+              quit_pending_ = false;
+              const auto saved = value ? std::get_if<bool>(value) : nullptr;
+              if (saved && *saved) PostMessage(hwnd, WM_APP + 1, 0, 0);
+            },
+            [this](const std::string&, const std::string&,
+                   const flutter::EncodableValue*) { quit_pending_ = false; },
+            [this]() { quit_pending_ = false; }));
+    return 0;
+  }
+  if (message == WM_APP + 1) {
+    DestroyWindow(hwnd);
+    return 0;
+  }
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

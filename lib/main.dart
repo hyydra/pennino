@@ -21,11 +21,13 @@ import 'raster_drawing.dart';
 import 'rich_text_controller.dart';
 import 'text_block_controller.dart';
 import 'update_service.dart';
+import 'quit_save.dart';
 
 export 'app_version.dart' show appVersion;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  QuitSaveCoordinator.initialize();
   runApp(const NotesApp());
 }
 
@@ -450,6 +452,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    QuitSaveCoordinator.register(_confirmSaveBeforeLeaving);
     rasterDrawing = RasterDrawingStore(
       width: widget.note.rasterWidth,
       pageHeight: widget.note.rasterPageHeight,
@@ -495,6 +498,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    QuitSaveCoordinator.unregister(_confirmSaveBeforeLeaving);
     driveSyncDebouncer.dispose();
     titleController.dispose();
     textBlockController.dispose();
@@ -510,7 +514,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      unawaited(_finalizeActiveStroke());
+      unawaited(_confirmSaveBeforeLeaving());
     }
   }
 
@@ -1344,40 +1348,10 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
 
   Future<bool> _confirmSaveBeforeLeaving() async {
     await _finalizeActiveStroke();
+    if (!mounted) return true;
     if (!hasUnsavedChanges) return true;
-    if (isSaving) {
-      await save(showMessage: false);
-      if (!mounted) return false;
-      if (saveFailed || hasUnsavedChanges) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('The note is still unsaved. Try saving again.'),
-          ),
-        );
-        return false;
-      }
-      return true;
-    }
-    final saveBeforeLeaving = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Unsaved changes'),
-        content: const Text('Save this note before leaving?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Stay'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Save and leave'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || saveBeforeLeaving != true) return false;
     await save(showMessage: false);
+    if (!mounted) return false;
     if (saveFailed || hasUnsavedChanges) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

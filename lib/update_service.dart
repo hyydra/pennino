@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'app_version.dart';
+import 'quit_save.dart';
 
 class UpdateInfo {
   final String version;
@@ -235,6 +236,10 @@ class UpdateService {
       if (Platform.isAndroid) {
         await _channel.invokeMethod('install', {'path': file.path});
       } else {
+        if (!await QuitSaveCoordinator.saveAll()) {
+          throw StateError(
+              'Update stopped because the note could not be saved');
+        }
         await Process.start(
           file.path,
           const [],
