@@ -41,5 +41,5 @@
 - [Publish v0.4.26](./handoff/2026-11-14-publish-v0-4-26.md) — complete; published from `57742f7` through PR #60, assets verified from their downloaded bytes and the change proved by a literal inside `libapp.so`.
 - [A hand that pans and a page number that stays](./handoff/2026-11-14-hand-pan-and-pinned-page-number.md) — merged through PR #62 (`2565e0e`); the hand tool became selectable and pans the paper with one finger, and the page number moved off the paper to the view's fixed top-left corner. Shipped in v0.4.27.
 - [Publish v0.4.27](./handoff/2026-11-14-publish-v0-4-27.md) — complete; published from `05cc57b` through PR #63, assets verified from their downloaded bytes and the change proved by a literal inside `libapp.so`.
-- [Publish v0.4.28](./handoff/2026-11-14-publish-v0-4-28.md) — PR #66 is open; CI and release are pending. Includes the save-before-quit branch change and Drive sync data-loss fixes. Investigate performance after publication.
+- [Publish v0.4.28](./handoff/2026-11-14-publish-v0-4-28.md) — PR #66 merged at `51e4364`; PR and post-merge CI passed. The `0.4.28+32` version-bump PR and release are pending. Includes the save-before-quit branch change and Drive sync data-loss fixes. Investigate performance after publication.
 - [Publish v0.4.16](./handoff/2026-11-11-publish-v0-4-16.md) — complete.
