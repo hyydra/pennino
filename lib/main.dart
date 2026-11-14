@@ -2934,7 +2934,11 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                           painter: RasterDrawingPainter(
                             tiles: rasterDrawing.tiles,
                             pageHeight: canvasPageHeight.round(),
-                            allTileKeys: rasterDrawing.tileKeys,
+                            tileKeysInBounds: (bounds) =>
+                                rasterDrawing.keysInBounds(
+                              bounds,
+                              pageHeight: canvasPageHeight.round(),
+                            ),
                             onNeedTiles: rasterDrawing.requestResident,
                             legacyStrokes: priorStrokes,
                           ),
@@ -3341,8 +3345,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                                                   tiles: rasterDrawing.tiles,
                                                   pageHeight:
                                                       canvasPageHeight.round(),
-                                                  allTileKeys:
-                                                      rasterDrawing.tileKeys,
+                                                  tileKeysInBounds: (bounds) =>
+                                                      rasterDrawing
+                                                          .keysInBounds(
+                                                    bounds,
+                                                    pageHeight: canvasPageHeight
+                                                        .round(),
+                                                  ),
                                                   onNeedTiles: rasterDrawing
                                                       .requestResident,
                                                   legacyStrokes:

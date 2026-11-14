@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -51,6 +52,36 @@ Future<int> alphaAtStore(
     x % RasterDrawingStore.tileSize,
     local % RasterDrawingStore.tileSize,
   );
+}
+
+class _CountingImageMap extends MapBase<RasterTileKey, ui.Image> {
+  final Map<RasterTileKey, ui.Image> _images;
+  int entriesRead = 0;
+
+  _CountingImageMap(this._images);
+
+  @override
+  Iterable<MapEntry<RasterTileKey, ui.Image>> get entries {
+    entriesRead++;
+    return _images.entries;
+  }
+
+  @override
+  ui.Image? operator [](Object? key) => _images[key];
+
+  @override
+  void operator []=(RasterTileKey key, ui.Image value) {
+    _images[key] = value;
+  }
+
+  @override
+  Iterable<RasterTileKey> get keys => _images.keys;
+
+  @override
+  void clear() => _images.clear();
+
+  @override
+  ui.Image? remove(Object? key) => _images.remove(key);
 }
 
 void main() {
@@ -588,7 +619,8 @@ void main() {
       final painter = RasterDrawingPainter(
         tiles: store.tiles,
         pageHeight: 100,
-        allTileKeys: store.tileKeys,
+        tileKeysInBounds: (bounds) =>
+            store.keysInBounds(bounds, pageHeight: 100),
         onNeedTiles: store.requestResident,
       );
 
@@ -613,6 +645,63 @@ void main() {
       expect(store.residentTileCount, 2);
       expect(await alphaAtStore(store, 1, 50, 120), greaterThan(0));
     } finally {
+      store.dispose();
+    }
+  });
+
+  test('painting one page visits only its page tile keys', () async {
+    final store = RasterDrawingStore(width: 100, pageHeight: 100);
+    final imageRecorder = ui.PictureRecorder();
+    ui.Canvas(imageRecorder).drawRect(
+      const ui.Rect.fromLTWH(0, 0, 1, 1),
+      ui.Paint(),
+    );
+    final image = await imageRecorder.endRecording().toImage(1, 1);
+    try {
+      await store.load({
+        for (var page = 0; page < 1000; page++)
+          RasterTileKey(page, 0, 0).encoded: 'unused',
+      }, firstPage: -1);
+      final residentTiles = _CountingImageMap({
+        for (var page = 0; page < 1000; page++)
+          RasterTileKey(page, 0, 0): image,
+      });
+      var visits = 0;
+      var visibleVisits = 0;
+      final allKeys = store.tileKeys.map((key) {
+        visits++;
+        return key;
+      });
+      final visibleKeys = store
+          .keysInBounds(
+            const ui.Rect.fromLTWH(0, 50000, 100, 100),
+            pageHeight: 100,
+          )
+          .map((key) {
+            visibleVisits++;
+            return key;
+          });
+      final requested = <RasterTileKey>[];
+      final painter = RasterDrawingPainter(
+        tiles: residentTiles,
+        pageHeight: 100,
+        allTileKeys: allKeys,
+        tileKeysInBounds: (_) => visibleKeys,
+        onNeedTiles: requested.addAll,
+      );
+      final recorder = ui.PictureRecorder();
+      painter.paint(
+        ui.Canvas(recorder, const ui.Rect.fromLTWH(0, 50000, 100, 100)),
+        const ui.Size(100, 100),
+      );
+      recorder.endRecording().dispose();
+
+      expect(visits, 0);
+      expect(visibleVisits, 1);
+      expect(residentTiles.entriesRead, 0);
+      expect(requested, isEmpty);
+    } finally {
+      image.dispose();
       store.dispose();
     }
   });
