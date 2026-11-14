@@ -3,8 +3,8 @@
 - Goal: identify and improve a measurable Pennino performance bottleneck
   without changing expected behavior.
 - Owner: Copilot.
-- State: PR #69 is open from `perf/raster-paint-visible-tiles`; the change is
-  committed as `eb63b71` and proceeding through the v0.4.29 release gates.
+- State: merged through PR #69 (`d8f829e`); PR and post-merge Android, Linux,
+  and Windows CI passed. Version-bump PR #70 is in progress.
 
 ## Log
 
