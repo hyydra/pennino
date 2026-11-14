@@ -6,10 +6,13 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart'
+    show RenderBox, RenderEditable, RenderObject;
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
 import 'app_version.dart';
+import 'autosave_controller.dart';
 import 'canvas_editing.dart';
 import 'canvas_painter.dart';
 import 'drive_sync_service.dart';
@@ -19,9 +22,9 @@ import 'note_store.dart';
 import 'pennino_theme.dart';
 import 'raster_drawing.dart';
 import 'rich_text_controller.dart';
-import 'text_block_controller.dart';
 import 'update_service.dart';
 import 'quit_save.dart';
+import 'widget_refresh.dart';
 
 export 'app_version.dart' show appVersion;
 
@@ -43,7 +46,11 @@ class NotesApp extends StatelessWidget {
 }
 
 class LauncherCanvasPage extends StatefulWidget {
-  const LauncherCanvasPage({super.key});
+  const LauncherCanvasPage({super.key, this.directoryProvider});
+
+  /// Overridable so a test can make the note folder unreachable. Production
+  /// always uses [noteDirectory].
+  final NoteDirectoryProvider? directoryProvider;
 
   @override
   State<LauncherCanvasPage> createState() => _LauncherCanvasPageState();
@@ -51,81 +58,221 @@ class LauncherCanvasPage extends StatefulWidget {
 
 class _LauncherCanvasPageState extends State<LauncherCanvasPage> {
   static const launcherNoteId = 'launcher-canvas';
-  final store = NoteStore(directoryProvider: noteDirectory);
+  late final NoteStore store = NoteStore(
+    directoryProvider: widget.directoryProvider ?? noteDirectory,
+  );
   Note? note;
+
+  /// Set when the stored note could not be read, so the app offers a retry
+  /// instead of spinning at a blank screen forever.
+  String? loadFailure;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    unawaited(_load());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(UpdateService.prompt(context, automatic: true));
     });
   }
 
   Future<void> _load() async {
-    final loaded = await store.loadNote(launcherNoteId) ??
-        Note(
-          id: launcherNoteId,
-          title: 'Launcher note',
-          text: '',
-          updated: DateTime.now(),
-          strokes: [],
-        );
-    if (mounted) {
-      setState(() => note = loaded);
+    try {
+      final loaded = await store.loadNote(launcherNoteId) ??
+          Note(
+            id: launcherNoteId,
+            title: 'Launcher note',
+            text: '',
+            updated: DateTime.now().toUtc(),
+            strokes: [],
+          );
+      if (!mounted) return;
+      setState(() {
+        note = loaded;
+        loadFailure = null;
+      });
+    } catch (error) {
+      // Reading the folder can fail for a reason the user can fix — a Drive
+      // folder that moved, a full disk, a permission revocation — and a
+      // spinner says nothing about any of them.
+      if (!mounted) return;
+      setState(() => loadFailure = '$error');
     }
+  }
+
+  Future<void> _retryLoad() async {
+    // Clearing the message first shows the spinner again: a retry that leaves
+    // the old error on screen looks like a retry that did nothing.
+    setState(() => loadFailure = null);
+    await _load();
   }
 
   @override
   Widget build(BuildContext context) {
     final loaded = note;
     if (loaded == null) {
+      final failure = loadFailure;
+      if (failure != null) {
+        return Scaffold(
+          body: NoteLoadFailure(
+            message: failure,
+            onRetry: () => unawaited(_retryLoad()),
+          ),
+        );
+      }
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return EditorPage(note: loaded, launcherMode: true);
   }
 }
 
+/// Shown in place of the note list or the editor when the note folder could
+/// not be read. A retry is part of the widget because the causes are usually
+/// transient or user-fixable — a mounted folder that was briefly away, a full
+/// disk, a revoked permission — and leaving no way back means restarting the
+/// app is the only option the screen offers.
+class NoteLoadFailure extends StatelessWidget {
+  const NoteLoadFailure({
+    super.key,
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.folder_off_outlined, size: 48),
+              const SizedBox(height: 12),
+              const Text(
+                'Notes could not be opened',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Try again'),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 class LibraryPage extends StatefulWidget {
-  const LibraryPage({super.key});
+  const LibraryPage({super.key, this.directoryProvider});
+
+  /// Overridable so a test can make the note folder unreachable. Production
+  /// always uses [noteDirectory].
+  final NoteDirectoryProvider? directoryProvider;
+
   @override
   State<LibraryPage> createState() => _LibraryPageState();
 }
 
 class _LibraryPageState extends State<LibraryPage> {
-  final store = NoteStore(directoryProvider: noteDirectory);
+  late final NoteStore store = NoteStore(
+    directoryProvider: widget.directoryProvider ?? noteDirectory,
+  );
   late final DriveSyncService syncService;
   List<Note> notes = [];
   bool loading = true;
+
+  /// Set when the note folder could not be read, so the library offers a retry
+  /// instead of showing an empty list that hides the user's notes.
+  String? loadFailure;
+
+  /// An unreachable Drive folder is reported once per visit instead of on every
+  /// automatic sync, and the flag clears as soon as a sync succeeds again.
+  bool reportedSyncProblem = false;
+
+  /// Unreadable remote files stay in the folder until the user fixes them, so
+  /// they are reported once per visit as well.
+  bool reportedSkippedFiles = false;
+
   @override
   void initState() {
     super.initState();
-    syncService = DriveSyncService(
-      store: store,
-      backend: createPlatformSyncBackend(
-        localNoteDirectory: noteDirectory,
-      ),
-    );
-    refresh();
+    syncService = sharedSyncService(store);
+    unawaited(refresh());
   }
 
   Future<void> refresh() async {
-    final loaded = await store.load();
-    if (mounted) {
+    try {
+      final loaded = await store.load();
+      if (!mounted) return;
       setState(() {
         notes = loaded;
         loading = false;
+        loadFailure = null;
       });
-      syncService.syncInBackground(
-        onResult: (_) => _reloadAfterBackgroundSync(),
+      syncService.syncInBackground(onResult: _reportBackgroundSync);
+    } catch (error) {
+      // An empty list here would read as "you have no notes", which is the one
+      // message that makes a user start writing over notes still on disk.
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        loadFailure = '$error';
+      });
+    }
+  }
+
+  void _reportBackgroundSync(DriveSyncResult result) {
+    if (!mounted) return;
+    unawaited(_reloadAfterBackgroundSync());
+    if (result.isSynced) {
+      reportedSyncProblem = false;
+      if (result.skippedRemoteFiles > 0 && !reportedSkippedFiles) {
+        reportedSkippedFiles = true;
+        _showSyncProblem(
+          '${result.skippedRemoteFiles} Drive file(s) could not be read '
+          'and were left untouched',
+        );
+      }
+      return;
+    }
+    reportedSkippedFiles = false;
+    if (result.status == DriveSyncStatus.unavailable && !reportedSyncProblem) {
+      reportedSyncProblem = true;
+      _showSyncProblem(
+        'The Google Drive folder is unavailable, so notes are not syncing',
       );
     }
   }
 
+  void _showSyncProblem(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   Future<void> _reloadAfterBackgroundSync() async {
-    final loaded = await store.load();
-    if (mounted) setState(() => notes = loaded);
+    try {
+      final loaded = await store.load();
+      if (!mounted) return;
+      setState(() {
+        notes = loaded;
+        loadFailure = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => loadFailure = '$error');
+    }
   }
 
   Future<void> openNote([Note? note]) async {
@@ -134,7 +281,7 @@ class _LibraryPageState extends State<LibraryPage> {
           id: const Uuid().v4(),
           title: 'Untitled note',
           text: '',
-          updated: DateTime.now(),
+          updated: DateTime.now().toUtc(),
           strokes: [],
         );
     await Navigator.push(
@@ -154,48 +301,72 @@ class _LibraryPageState extends State<LibraryPage> {
         ),
         body: loading
             ? const Center(child: CircularProgressIndicator())
-            : notes.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.draw_outlined, size: 64, color: Colors.grey),
-                        SizedBox(height: 12),
-                        Text('Start your first handwritten note'),
-                      ],
-                    ),
+            : loadFailure != null && notes.isEmpty
+                ? NoteLoadFailure(
+                    message: loadFailure!,
+                    onRetry: () => unawaited(refresh()),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: notes.length,
-                    itemBuilder: (context, i) {
-                      final n = notes[i];
-                      return Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.note_alt_outlined),
-                          title: Text(n.title),
-                          subtitle: Text(
-                            '${n.strokes.length} strokes • ${n.updated.toLocal()}',
-                          ),
-                          onTap: () => openNote(n),
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (v) async {
-                              if (v == 'delete') {
-                                await store.delete(n);
-                                refresh();
-                              }
-                            },
-                            itemBuilder: (_) => [
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Text('Delete'),
-                              ),
-                            ],
-                          ),
+                : notes.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.draw_outlined,
+                                size: 64, color: Colors.grey),
+                            SizedBox(height: 12),
+                            Text('Start your first handwritten note'),
+                          ],
                         ),
-                      );
-                    },
+                      )
+                    : _noteList(),
+      );
+
+  /// A failed read is never shown as an empty library: "start your first note"
+  /// over notes that are still on disk invites the user to write on top of
+  /// them. The retry is offered because the usual causes are fixable.
+  Widget _noteList() => ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: notes.length,
+        itemBuilder: (context, i) {
+          final n = notes[i];
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.note_alt_outlined),
+              title: Text(n.title),
+              subtitle: Text(
+                '${n.strokes.length} strokes • ${n.updated.toLocal()}',
+              ),
+              onTap: () => openNote(n),
+              trailing: PopupMenuButton<String>(
+                onSelected: (v) async {
+                  if (v != 'delete') return;
+                  try {
+                    // delete leaves a tombstone behind, so the
+                    // deletion also reaches other devices.
+                    await store.delete(n);
+                  } catch (error) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Could not delete the note: $error',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  await refresh();
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete'),
                   ),
+                ],
+              ),
+            ),
+          );
+        },
       );
 }
 
@@ -387,18 +558,42 @@ class _EraserToolIconPainter extends CustomPainter {
 class EditorPage extends StatefulWidget {
   final Note note;
   final bool launcherMode;
-  const EditorPage({super.key, required this.note, this.launcherMode = false});
+
+  /// Overridable so a test can watch the notes the editor writes. Production
+  /// always uses [noteDirectory].
+  final NoteDirectoryProvider? directoryProvider;
+  const EditorPage({
+    super.key,
+    required this.note,
+    this.launcherMode = false,
+    this.directoryProvider,
+  });
   @override
   State<EditorPage> createState() => _EditorPageState();
 }
 
 class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   static const widgetChannel = MethodChannel('notes/widget');
+
+  /// Keeps the home-screen card in step with the note rather than with the
+  /// button, so a card placed before the first pin is not a permanent
+  /// placeholder.
+  late final WidgetRefreshScheduler widgetRefresh;
+  bool widgetRefreshWarned = false;
   late final TextEditingController titleController;
-  late final TextBlockController textBlockController;
+  late final RichTextEditingController textController;
+  late final FocusNode textFocusNode;
+  TextDocumentFormat documentFormat = TextDocumentFormat();
   late final TextEditingController taskController;
   final TransformationController transformationController =
       TransformationController();
+
+  /// The document field's wrapper, so the caret can be measured where the
+  /// field actually paints it.
+  final GlobalKey documentFieldKey = GlobalKey(debugLabel: 'document-field');
+
+  /// The box the canvas is clipped to: everything under it is bottom menu.
+  final GlobalKey canvasClipKey = GlobalKey(debugLabel: 'canvas-clip');
   final ValueNotifier<int> canvasRepaint = ValueNotifier(0);
   DrawTool tool = DrawTool.pen;
   Color strokeColor = Colors.blue.shade800;
@@ -418,42 +613,61 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   bool showTasks = false;
   bool applyingExternalChange = false;
   bool hasUnsavedChanges = false;
+
+  /// Reported once per editor visit so an unreachable Drive folder is visible
+  /// without nagging after every automatic sync.
+  bool reportedSyncProblem = false;
   bool isSaving = false;
   bool saveFailed = false;
+
+  /// True while a failed save is being reported by the window-close path, so
+  /// the same failure does not also arrive as an autosave message.
+  bool _flushingForExit = false;
   int _editRevision = 0;
-  Future<void>? _saveOperation;
   final Map<int, Offset> canvasPointerPositions = {};
+
+  /// Pointer positions at the start of the current pinch frame, and the
+  /// pointers that have reported a movement in it. See [_trackPinchRound].
+  Map<int, Offset>? pinchRoundStart;
+  final Set<int> pinchRoundMoved = {};
   int? drawingPointer;
   Offset? lastSampleViewportPosition;
   double canvasViewportHeight = 0;
   double canvasPageHeight = 1200;
   double canvasWidth = 2000;
   late RasterDrawingStore rasterDrawing;
+
+  /// The marks this editor has made since it opened the note. It dies with
+  /// the page, and with any raster store it no longer describes.
+  final RasterHistory undoHistory = RasterHistory();
   late Future<void> _rasterLoadOperation;
   Future<void>? _rasterMigrationOperation;
   bool rasterImagesLoaded = false;
   bool isRasterizing = false;
+
+  /// True while an undo or redo step is being swapped back into the paper.
+  bool _isReverting = false;
+
+  /// The swap in flight, so a released stroke waits for it instead of baking
+  /// its mark into a page that is half taken back.
+  Future<void>? _revertOperation;
   Object? rasterImageError;
   bool legacyRasterizationScheduled = false;
   bool rasterMigrationOnlyDirty = false;
   Future<void>? _strokeCommitOperation;
-  final store = NoteStore(directoryProvider: noteDirectory);
+  late final NoteStore store = NoteStore(
+    directoryProvider: widget.directoryProvider ?? noteDirectory,
+  );
+  late final AutosaveController autosave;
   late final DriveSyncService syncService;
   late final DriveSyncDebouncer driveSyncDebouncer;
-
-  List<RichTextEditingController> get textControllers =>
-      textBlockController.controllers;
-  List<FocusNode> get textFocusNodes => textBlockController.focusNodes;
-  List<TextBlockFormat> get textFormats => textBlockController.formats;
-  int get activeTextIndex => textBlockController.activeIndex;
-  set activeTextIndex(int index) => textBlockController.activeIndex = index;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     QuitSaveCoordinator.register(_confirmSaveBeforeLeaving);
-    rasterDrawing = RasterDrawingStore(
+    rasterDrawing = _createRasterStore(
       width: widget.note.rasterWidth,
       pageHeight: widget.note.rasterPageHeight,
     );
@@ -465,28 +679,40 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       widget.note.rasterTiles,
       legacyPages: widget.note.rasterPages,
     );
-    syncService = DriveSyncService(
-      store: store,
-      backend: createPlatformSyncBackend(
-        localNoteDirectory: noteDirectory,
-      ),
-    );
+    syncService = sharedSyncService(store);
     driveSyncDebouncer = DriveSyncDebouncer(service: syncService);
-    textBlockController = TextBlockController(
-      onChanged: _markChanged,
-      onFocusChanged: () {
-        if (mounted) setState(() {});
+    // Created before any controller can report an edit: the listeners below
+    // schedule through it from the first keystroke.
+    autosave = AutosaveController(
+      onSave: () async {
+        await _performSave();
+        // _performSave keeps its error for the button instead of rethrowing,
+        // so the queue has to be told out loud. A drain that reports success
+        // after a failed write would never retry, and the note would go on
+        // unsaved with nobody saying so.
+        if (saveFailed) throw StateError('The note could not be written');
       },
+      onStatusChanged: _onAutosaveStatus,
     );
+    widgetRefresh = WidgetRefreshScheduler(
+      hasWidgets: _hasNoteWidgets,
+      render: renderPreview,
+      publish: _sendPreviewToWidget,
+      isEnabled: () => Platform.isAndroid,
+      onError: _onWidgetRefreshFailed,
+    );
+    textFocusNode = FocusNode()
+      ..addListener(() {
+        if (mounted) setState(() {});
+      });
+    textController = RichTextEditingController(text: '', styles: [])
+      ..addListener(_markChanged);
     titleController = TextEditingController(text: widget.note.title);
     titleController.addListener(_markChanged);
     taskController = TextEditingController();
     applyingExternalChange = true;
     try {
-      textBlockController.replace(
-        widget.note.textBlocks,
-        formats: widget.note.textBlockFormats,
-      );
+      _loadDocumentIntoEditor(widget.note.text, widget.note.textFormat);
     } finally {
       applyingExternalChange = false;
     }
@@ -497,11 +723,14 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    autosave.dispose();
+    widgetRefresh.dispose();
     WidgetsBinding.instance.removeObserver(this);
     QuitSaveCoordinator.unregister(_confirmSaveBeforeLeaving);
     driveSyncDebouncer.dispose();
     titleController.dispose();
-    textBlockController.dispose();
+    textController.dispose();
+    textFocusNode.dispose();
     taskController.dispose();
     rasterDrawing.dispose();
     transformationController.dispose();
@@ -510,12 +739,98 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeMetrics() {
+    // A soft keyboard opening or a window resizing takes the bottom of the
+    // canvas away without a keystroke, which is the other way the line being
+    // written ends up behind the bottom menu. The frame has to run first:
+    // until then the canvas still has its old height.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && textFocusNode.hasFocus) _revealDocumentCaret();
+    });
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      unawaited(_confirmSaveBeforeLeaving());
+      // The process can be suspended and killed here, so what is on screen
+      // goes to disk through the same autosave the edits schedule. The card
+      // refresh is chained behind that write rather than left to its debounce:
+      // walking to the home screen is the moment the card is looked at, and a
+      // picture still queued two seconds out may never be drawn.
+      if (hasUnsavedChanges) {
+        unawaited(autosave.saveNow().then((_) => widgetRefresh.flush()));
+      } else {
+        unawaited(_finalizeActiveStroke().then((_) => widgetRefresh.flush()));
+      }
     }
+  }
+
+  @override
+  Future<ui.AppExitResponse> didRequestAppExit() async {
+    // Closing the desktop window ends the process, and the note a user was
+    // looking at is the one they expect to find when they open it again.
+    await _finalizeActiveStroke();
+    if (hasUnsavedChanges) {
+      _flushingForExit = true;
+      try {
+        await autosave.saveNow();
+      } finally {
+        _flushingForExit = false;
+      }
+    }
+    if (!mounted) return ui.AppExitResponse.exit;
+    if (saveFailed || hasUnsavedChanges) {
+      // Leaving now would drop the edits with nobody to say so, which is worse
+      // than a window that refuses to close and explains itself.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Pennino could not save this note, so it is staying open. '
+            'Save it, or copy the note out, before closing.',
+          ),
+        ),
+      );
+      return ui.AppExitResponse.cancel;
+    }
+    return ui.AppExitResponse.exit;
+  }
+
+  /// The controller decides when a save is due; the editor is the part that
+  /// has to say what happened, because an autosave that fails quietly is the
+  /// same as an autosave that never existed.
+  void _onAutosaveStatus(SaveStatus status) {
+    if (status == SaveStatus.saved) {
+      // The note is on disk, so the card can be redrawn from it. The
+      // scheduler decides when that is worth a picture.
+      widgetRefresh.noteSaved();
+      return;
+    }
+    if (status != SaveStatus.failed || !mounted || _flushingForExit) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Pennino could not write this note. Your edits are still here.',
+        ),
+      ),
+    );
+  }
+
+  /// A store this editor owns keeps only the tiles it has looked at as
+  /// pixels, and decodes the rest when the paper or a stroke reaches for them.
+  /// Whichever store is current has to be able to say so, or ink that arrives
+  /// after the frame it was asked for never gets painted.
+  RasterDrawingStore _createRasterStore({
+    required int width,
+    required int pageHeight,
+  }) =>
+      RasterDrawingStore(width: width, pageHeight: pageHeight)
+        ..onTilesDecoded = _notifyTilesDecoded;
+
+  void _notifyTilesDecoded() {
+    if (!mounted) return;
+    canvasRepaint.value++;
   }
 
   Future<void> _loadRasterPages(
@@ -610,7 +925,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     final migrationPageHeight = canvasPageHeight.ceil();
     final migrationPageCount = widget.note.pageCount;
     final encodedTiles = await source.encode();
-    final migrated = RasterDrawingStore(
+    final migrated = _createRasterStore(
       width: source.width,
       pageHeight: source.pageHeight,
     );
@@ -632,6 +947,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     }
     setState(() {
       rasterDrawing = migrated;
+      // The marks this history describes were made on the store that has just
+      // been replaced; their tiles belong to a drawing that no longer exists.
+      undoHistory.clear();
       widget.note.strokes.removeRange(0, legacyStrokes.length);
       widget.note.rasterWidth = rasterDrawing.width;
       widget.note.rasterPageHeight = rasterDrawing.pageHeight;
@@ -646,6 +964,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     if (applyingExternalChange) return;
     rasterMigrationOnlyDirty = false;
     _editRevision++;
+    autosave.markChanged();
     if (hasUnsavedChanges) return;
     setState(() => hasUnsavedChanges = true);
   }
@@ -654,40 +973,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     if (isSaving || hasUnsavedChanges) return;
     rasterMigrationOnlyDirty = true;
     _editRevision++;
+    autosave.markChanged();
     setState(() => hasUnsavedChanges = true);
   }
-
-  void addTextBlock() => _createTextBlock();
-
-  void _createTextBlock({Offset? position}) {
-    var addedIndex = 0;
-    setState(() {
-      showText = true;
-      tool = DrawTool.text;
-      addedIndex = textBlockController.add(
-        x: position?.dx,
-        y: position?.dy,
-      );
-      activeTextIndex = addedIndex;
-    });
-    _markChanged();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || addedIndex >= textFocusNodes.length) return;
-      textFocusNodes[addedIndex].requestFocus();
-    });
-  }
-
-  void removeTextBlock(int index) {
-    setState(() {
-      textBlockController.removeAt(index);
-    });
-    _markChanged();
-  }
-
-  RichTextEditingController? get _activeTextController => textControllers
-          .isEmpty
-      ? null
-      : textControllers[activeTextIndex.clamp(0, textControllers.length - 1)];
 
   Color get _activeStrokeColor =>
       tool == DrawTool.highlighter ? highlighterColor : strokeColor;
@@ -718,59 +1006,48 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     });
   }
 
-  void _growTextBlockToFit(int index) {
-    if (index < 0 || index >= textControllers.length) return;
-    final format = textFormats[index];
-    final painter = TextPainter(
-      text: textControllers[index].buildTextSpan(
-        context: context,
-        withComposing: false,
-      ),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout(maxWidth: math.max(1, format.width - 16));
-    final requiredHeight = math.max(90.0, painter.height + 48);
-    if (requiredHeight <= format.height) return;
-    setState(() => format.height = requiredHeight);
-    _markChanged();
+  void _loadDocumentIntoEditor(String text, TextDocumentFormat format) {
+    documentFormat = format.copy();
+    // The style list is attached after the text: `RichTextEditingController`
+    // shifts every range it holds when the text changes, so loading into an
+    // already-styled controller would move all the note's offsets to the end.
+    textController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    textController.styles
+      ..clear()
+      ..addAll(documentFormat.styles);
   }
 
   void _setTextFontSize(double size) {
-    final controller = _activeTextController;
-    if (controller == null) return;
-    final selection = controller.selection;
+    final selection = textController.selection;
     setState(() {
       if (selection.isValid && !selection.isCollapsed) {
-        controller.applyStyle(selection, fontSize: size);
+        textController.applyStyle(selection, fontSize: size);
       } else {
-        textFormats[activeTextIndex].fontSize = size;
+        documentFormat.fontSize = size;
       }
     });
     _markChanged();
   }
 
   void _toggleTextBold() {
-    final controller = _activeTextController;
-    if (controller == null) return;
-    final format = textFormats[activeTextIndex];
-    final selection = controller.selection;
+    final selection = textController.selection;
     setState(() {
       if (selection.isValid && !selection.isCollapsed) {
-        final current = controller.selectedBold(selection) ?? format.bold;
-        controller.applyStyle(selection, bold: !current);
+        final current =
+            textController.selectedBold(selection) ?? documentFormat.bold;
+        textController.applyStyle(selection, bold: !current);
       } else {
-        format.bold = !format.bold;
+        documentFormat.bold = !documentFormat.bold;
       }
     });
     _markChanged();
   }
 
   void _toggleLinePrefix(String prefix) {
-    final controller = _activeTextController;
-    if (controller == null) {
-      addTextBlock();
-      return;
-    }
+    final controller = textController;
     final value = controller.value;
     final cursor =
         value.selection.isValid ? value.selection.start : value.text.length;
@@ -795,9 +1072,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     );
   }
 
-  void _toggleChecklistAtSelection(int index) {
-    if (index < 0 || index >= textControllers.length) return;
-    final controller = textControllers[index];
+  void _toggleChecklistAtSelection() {
+    final controller = textController;
     final value = controller.value;
     if (!value.selection.isValid) return;
     final cursor = value.selection.extentOffset;
@@ -820,8 +1096,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   }
 
   void _changeIndent(bool increase) {
-    final controller = _activeTextController;
-    if (controller == null) return;
+    final controller = textController;
     final value = controller.value;
     final cursor =
         value.selection.isValid ? value.selection.start : value.text.length;
@@ -888,15 +1163,12 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       ];
 
   void _setTextColor(Color selected) {
-    if (textControllers.isEmpty) return;
-    final controller = _activeTextController;
-    if (controller == null) return;
-    final selection = controller.selection;
+    final selection = textController.selection;
     setState(() {
       if (selection.isValid && !selection.isCollapsed) {
-        controller.applyStyle(selection, color: selected.toARGB32());
+        textController.applyStyle(selection, color: selected.toARGB32());
       } else {
-        textFormats[activeTextIndex].color = selected.toARGB32();
+        documentFormat.color = selected.toARGB32();
       }
     });
     _markChanged();
@@ -905,7 +1177,11 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   CanvasTransform get canvasTransform {
     final matrix = transformationController.value;
     return CanvasTransform(
-      scale: matrix.getMaxScaleOnAxis(),
+      // getMaxScaleOnAxis also measures the untouched Z basis vector, so it
+      // reports 1 for every zoom out of this 2D canvas. That made pen input and
+      // the pinch gesture treat a zoomed-out page as unscaled. The canvas only
+      // ever builds a uniform 2D scale, held by the X basis vector.
+      scale: matrix.storage[0].abs(),
       translationX: matrix.storage[12],
       translationY: matrix.storage[13],
     );
@@ -929,10 +1205,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   }
 
   void begin(PointerDownEvent event) {
+    // A save in flight is not a reason to refuse the pen: with autosave one
+    // arrives roughly every second, and a canvas that ignores the first touch
+    // after each edit loses strokes. The write itself refuses a partly drawn
+    // stroke, and the revision counter picks the new one up on the next save.
     if (tool == DrawTool.hand ||
         tool == DrawTool.text ||
         isRasterizing ||
-        isSaving ||
         active != null ||
         activeEraser != null ||
         !rasterImagesLoaded ||
@@ -973,38 +1252,194 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     });
   }
 
-  int? _textBlockAtViewport(Offset viewportPoint) {
+  static const double _documentPageMargin = 48;
+  static const double _documentContentTop = 4;
+  static const double _documentContentBottom = 8;
+  static const double _textContentLeft = 8;
+  static const double _textContentWidthInset = 16;
+
+  /// The document owns a fixed column: the full page width between the paper
+  /// margins. Nothing about it is stored per note, so it cannot be moved or
+  /// resized and there is no box to grow.
+  double get _documentColumnWidth =>
+      math.max(240, canvasWidth - 2 * _documentPageMargin);
+
+  /// The document's own base style. `RichTextEditingController.buildTextSpan`
+  /// merges each stored range onto this, so the layout used for hit-testing
+  /// and page growth measures the same glyphs the field paints.
+  TextStyle get _documentStyle => TextStyle(
+        color: Color(documentFormat.color),
+        fontSize: documentFormat.fontSize,
+        fontWeight: documentFormat.bold ? FontWeight.bold : FontWeight.normal,
+      );
+
+  TextPainter _layoutDocument() {
+    final painter = TextPainter(
+      text: textController.buildTextSpan(
+        context: context,
+        style: _documentStyle,
+        withComposing: false,
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    );
+    painter.layout(
+      maxWidth: math.max(1, _documentColumnWidth - _textContentWidthInset),
+    );
+    return painter;
+  }
+
+  /// True when [textLocal], measured from the first glyph of the document,
+  /// falls inside one of the laid-out line boxes.
+  bool _pointHitsDocumentLine(Offset textLocal) {
+    if (textLocal.dx < 0 || textLocal.dy < 0) return false;
+    var lineTop = 0.0;
+    for (final line in _layoutDocument().computeLineMetrics()) {
+      final lineBottom = lineTop + line.height;
+      if (textLocal.dy <= lineBottom) {
+        return textLocal.dx >= line.left &&
+            textLocal.dx <= line.left + line.width;
+      }
+      lineTop = lineBottom;
+    }
+    return false;
+  }
+
+  /// The point in the document's own text coordinates, or null when the text
+  /// layer is hidden.
+  Offset? _documentTextLocal(Offset viewportPoint) {
     if (!showText) return null;
     final scenePoint = canvasTransform.sceneFromViewport(
       CanvasPoint(viewportPoint.dx, viewportPoint.dy),
     );
-    for (var index = textFormats.length - 1; index >= 0; index--) {
-      final format = textFormats[index];
-      if (scenePoint.x >= format.x &&
-          scenePoint.x <= format.x + format.width &&
-          scenePoint.y >= format.y &&
-          scenePoint.y <= format.y + format.height) {
-        return index;
-      }
-    }
-    return null;
+    return Offset(
+      scenePoint.x - (_documentPageMargin + _textContentLeft),
+      scenePoint.y - (_documentPageMargin + _documentContentTop),
+    );
   }
 
-  bool _activateTextAt(Offset viewportPoint) {
-    final index = _textBlockAtViewport(viewportPoint);
-    if (index == null) return false;
+  bool _activateDocument(Offset viewportPoint) {
+    final textLocal = _documentTextLocal(viewportPoint);
+    // An empty document lays out no lines, so a blank page stays paper for
+    // every tool - the v0.4.20 empty-block exception went with the boxes.
+    if (textLocal == null || !_pointHitsDocumentLine(textLocal)) return false;
+    // The field only takes pointers in text mode, so a drawing-tool tap that
+    // activates it has to place the caret where the tap landed.
+    final fieldOwnedPointer = tool == DrawTool.text;
     setState(() {
       active = null;
       activeEraser = null;
-      activeTextIndex = index;
+      showText = true;
       tool = DrawTool.text;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && index < textFocusNodes.length) {
-        textFocusNodes[index].requestFocus();
+      if (!mounted) return;
+      if (!fieldOwnedPointer) {
+        textController.selection = TextSelection.collapsed(
+          offset: _layoutDocument().getPositionForOffset(textLocal).offset,
+        );
+        // The field never saw this pointer, so its tap handler - which is what
+        // toggles an inline checklist mark - has to run from here.
+        _toggleChecklistAtSelection();
       }
+      textFocusNode.requestFocus();
     });
     return true;
+  }
+
+  /// A tap on bare paper in text mode keeps writing: the caret goes to the end
+  /// of the document instead of opening another box.
+  void _focusDocumentAtEnd() {
+    setState(() {
+      showText = true;
+      tool = DrawTool.text;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      textController.selection =
+          TextSelection.collapsed(offset: textController.text.length);
+      textFocusNode.requestFocus();
+    });
+  }
+
+  /// Text that runs past the last page pushes the page count up, using the
+  /// same margin the scroll rule in `_refreshCanvasViewport` applies.
+  void _growPagesForDocument() {
+    if (isRasterizing || isSaving || canvasPageHeight <= 0) return;
+    final bottom = _documentPageMargin +
+        _documentContentTop +
+        _layoutDocument().height +
+        _documentContentBottom;
+    var appended = false;
+    while (bottom > widget.note.pageCount * canvasPageHeight - 180) {
+      widget.note.pageCount += 1;
+      appended = true;
+    }
+    if (appended) setState(() {});
+  }
+
+  /// How far from either edge of the visible canvas the caret is held.
+  static const double _caretKeepIn = 24;
+
+  /// The document field's live text layout, or null while the field is not on
+  /// screen.
+  ///
+  /// This is the only geometry that agrees with what the canvas paints: the
+  /// field merges the theme's line height onto the document style, so the
+  /// app's own `TextPainter` in `_layoutDocument` lays out measurably shorter
+  /// lines than the ones being drawn.
+  RenderEditable? _documentEditable() {
+    final root = documentFieldKey.currentContext?.findRenderObject();
+    if (root == null) return null;
+    RenderEditable? found;
+    void visit(RenderObject node) {
+      if (found == null && node is RenderEditable) found = node;
+      node.visitChildren(visit);
+    }
+
+    visit(root);
+    return found;
+  }
+
+  /// Moves the canvas the smallest amount that puts the line under the caret
+  /// back inside the window the canvas actually has.
+  ///
+  /// Typing grows the document downwards, and the soft keyboard takes the
+  /// bottom of that window away, so without this the line being written
+  /// slides under the bottom menu and the writer types blind. A caret already
+  /// inside the window leaves the canvas exactly where the writer put it, so
+  /// this can never fight a manual scroll.
+  void _revealDocumentCaret() {
+    final editable = _documentEditable();
+    final clip = canvasClipKey.currentContext?.findRenderObject();
+    if (editable == null || clip is! RenderBox) return;
+    final selection = textController.selection;
+    if (!selection.isValid || selection.extentOffset < 0) return;
+    final points = editable.getEndpointsForSelection(selection);
+    if (points.length != 1) return;
+    // Both edges are read in the clipped canvas's own coordinates, where the
+    // visible band is simply `0 .. clip.size.height` and a shift in it is a
+    // shift of the same size in the view matrix.
+    final caret = clip.globalToLocal(
+      editable.localToGlobal(points.single.point),
+    );
+    final lineTop = caret.dy - editable.preferredLineHeight;
+    var shift = 0.0;
+    if (caret.dy > clip.size.height - _caretKeepIn) {
+      shift = (clip.size.height - _caretKeepIn) - caret.dy;
+    } else if (lineTop < _caretKeepIn) {
+      shift = _caretKeepIn - lineTop;
+      // In a canvas shorter than one line the two rules disagree: pulling
+      // the caret back from the top would push it under the menu again, and
+      // the next keystroke would pull it back, so the page would shake by a
+      // whole line every other key. The menu is the edge the writer cannot
+      // see past, so the bottom one wins and the page stops moving.
+      shift = math.min(shift, clip.size.height - _caretKeepIn - caret.dy);
+    }
+    if (shift == 0) return;
+    final next = transformationController.value.clone();
+    next[13] += shift;
+    transformationController.value = next;
   }
 
   void move(PointerMoveEvent event) {
@@ -1072,8 +1507,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
 
   void _canvasPointerDown(PointerDownEvent event) {
     canvasPointerPositions[event.pointer] = event.localPosition;
+    pinchRoundStart = null;
+    pinchRoundMoved.clear();
     if (canvasPointerPositions.length == 1) {
-      if (_activateTextAt(event.localPosition)) {
+      // The hand is for moving, never for placing a caret: a pan that began
+      // on a line of the document would otherwise hand the gesture to the
+      // text field and stop after one frame.
+      if (tool != DrawTool.hand && _activateDocument(event.localPosition)) {
         drawingPointer = null;
         return;
       }
@@ -1096,6 +1536,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   void _canvasPointerMove(PointerMoveEvent event) {
     final previousPosition = canvasPointerPositions[event.pointer];
     if (previousPosition == null) return;
+    final beforeUpdate = Map.of(canvasPointerPositions);
     canvasPointerPositions[event.pointer] = event.localPosition;
     if (canvasPointerPositions.length >= 2) {
       final pointers = canvasPointerPositions.keys.take(2).toList();
@@ -1128,16 +1569,78 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       next[12] = currentCenter.dx - sceneX * nextScale;
       next[13] = currentCenter.dy - sceneY * nextScale;
       transformationController.value = next;
-      _refreshCanvasViewport(
-        userScrolledDown: currentCenter.dy < previousCenter.dy - 0.5,
-      );
+      _trackPinchRound(beforeUpdate, event.pointer);
+      return;
+    }
+    if (tool == DrawTool.hand) {
+      if (drawingPointer != event.pointer) return;
+      // Same seam as the wheel and the pinch: the finger carries the paper,
+      // and the viewport rule still decides whether another page is needed.
+      final delta = event.localPosition - previousPosition;
+      final next = transformationController.value.clone();
+      next[12] += delta.dx;
+      next[13] += delta.dy;
+      transformationController.value = next;
+      _refreshCanvasViewport(userScrolledDown: delta.dy < -2);
       return;
     }
     if (drawingPointer == event.pointer) move(event);
   }
 
+  /// Collects the pointer events of one pinch frame, and reports whether that
+  /// frame scrolled the canvas.
+  ///
+  /// The platform delivers a two-finger movement one pointer at a time, so a
+  /// single event always changes the distance between the fingers sharply even
+  /// when the whole hand only translates. Measuring over a full round, one
+  /// event per finger, is what separates a pan from a spread: a pan returns the
+  /// distance to where it started, a zoom does not. Without this, the upward
+  /// drift of a rotating hand read as a scroll and appended a page in the
+  /// middle of a zoom.
+  void _trackPinchRound(Map<int, Offset> beforeUpdate, int pointer) {
+    final active = canvasPointerPositions.keys.toList();
+    var start = pinchRoundStart;
+    // Set has identity equality, so membership is compared key by key: a round
+    // only continues while exactly the same fingers are still down.
+    if (start == null ||
+        start.length != active.length ||
+        !active.every(start.containsKey)) {
+      start = beforeUpdate;
+      pinchRoundStart = start;
+      pinchRoundMoved.clear();
+    }
+    pinchRoundMoved.add(pointer);
+    if (pinchRoundMoved.length < active.length) return;
+    pinchRoundStart = null;
+    pinchRoundMoved.clear();
+
+    final ids = active.take(2).toList();
+    final startFirst = start[ids[0]];
+    final startSecond = start[ids[1]];
+    final currentFirst = canvasPointerPositions[ids[0]];
+    final currentSecond = canvasPointerPositions[ids[1]];
+    if (startFirst == null ||
+        startSecond == null ||
+        currentFirst == null ||
+        currentSecond == null) {
+      return;
+    }
+    final centreDelta =
+        (currentFirst + currentSecond) / 2 - (startFirst + startSecond) / 2;
+    final spreadDelta = (currentFirst - currentSecond).distance -
+        (startFirst - startSecond).distance;
+    _refreshCanvasViewport(
+      userScrolledDown:
+          centreDelta.dy < -2 && centreDelta.distance >= spreadDelta.abs(),
+    );
+  }
+
   void _canvasPointerEnd(PointerEvent event) {
-    if (drawingPointer == event.pointer && canvasPointerPositions.length == 1) {
+    pinchRoundStart = null;
+    pinchRoundMoved.clear();
+    if (drawingPointer == event.pointer &&
+        canvasPointerPositions.length == 1 &&
+        tool != DrawTool.hand) {
       end(event);
     }
     canvasPointerPositions.remove(event.pointer);
@@ -1174,6 +1677,57 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     }
   }
 
+  /// The page number floats on the view rather than on the paper, so it stays
+  /// in the corner however far the paper has been panned or zoomed. It names
+  /// the page under the top edge: zoomed out far enough to show several pages
+  /// at once, the one the reading starts from is still the top one.
+  Widget _canvasPageIndicator() => Positioned(
+        left: 12,
+        top: 12,
+        child: IgnorePointer(
+          child: ValueListenableBuilder<Matrix4>(
+            valueListenable: transformationController,
+            builder: (context, matrix, _) {
+              final scale = matrix.storage[0].abs();
+              final top = scale > 0.0001 ? -matrix.storage[13] / scale : 0.0;
+              final page = canvasPageHeight > 0
+                  ? (top / canvasPageHeight)
+                      .floor()
+                      .clamp(0, widget.note.pageCount - 1)
+                      .toInt()
+                  : 0;
+              return Semantics(
+                label: 'Page ${page + 1} of ${widget.note.pageCount}',
+                excludeSemantics: true,
+                child: DecoratedBox(
+                  key: const Key('page-indicator'),
+                  decoration: BoxDecoration(
+                    color: PenninoColors.leatherInset,
+                    borderRadius: const BorderRadius.all(Radius.circular(5)),
+                    border: Border.fromBorderSide(
+                      BorderSide(color: PenninoColors.gold),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    child: Text(
+                      '${page + 1}/${widget.note.pageCount}',
+                      style: const TextStyle(
+                        color: PenninoColors.paleGold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+
   Future<void> _finalizeActiveStroke() {
     final activeCommit = _strokeCommitOperation;
     if (activeCommit != null) return activeCommit;
@@ -1195,24 +1749,34 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     final erasing = activeEraser != null;
     setState(() => isRasterizing = true);
     try {
+      // A revert is replacing tiles through the real codec; drawing beside it
+      // would bake a mark into a page that is half-taken-back, and the
+      // snapshot this stroke records would not be the one the user sees.
+      await _revertOperation;
       await _ensureRasterized();
-      final changed = erasing
-          ? await rasterDrawing.eraseStroke(
-              stroke,
-              canvasWidth: canvasWidth.ceil(),
-              canvasPageHeight: canvasPageHeight.ceil(),
-              pageCount: widget.note.pageCount,
-            )
-          : true;
-      if (!erasing) {
-        await rasterDrawing.addStroke(
-          stroke,
-          canvasWidth: canvasWidth.ceil(),
-          canvasPageHeight: canvasPageHeight.ceil(),
-          pageCount: widget.note.pageCount,
-        );
-      }
+      // The mark is baked inside a recording, so taking it back costs the
+      // tiles it covered and no more. The recording is also the honest answer
+      // to 'did anything change at all': a mark that landed off the paper
+      // replaced no tile, where the drawing path used to assume it always had.
+      final covered = await rasterDrawing.record(() async {
+        if (erasing) {
+          await rasterDrawing.eraseStroke(
+            stroke,
+            canvasWidth: canvasWidth.ceil(),
+            canvasPageHeight: canvasPageHeight.ceil(),
+            pageCount: widget.note.pageCount,
+          );
+        } else {
+          await rasterDrawing.addStroke(
+            stroke,
+            canvasWidth: canvasWidth.ceil(),
+            canvasPageHeight: canvasPageHeight.ceil(),
+            pageCount: widget.note.pageCount,
+          );
+        }
+      });
       if (!mounted) return;
+      if (covered != null) undoHistory.record(covered);
       setState(() {
         active = null;
         activeEraser = null;
@@ -1223,13 +1787,69 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         widget.note.rasterWidth = rasterDrawing.width;
         widget.note.rasterPageHeight = rasterDrawing.pageHeight;
       });
-      if (changed) _markChanged();
+      if (covered != null) _markChanged();
     } catch (error) {
       if (!mounted) return;
       setState(() => isRasterizing = false);
       _markChanged();
       _showRasterError(error);
     }
+  }
+
+  /// A mark that is mid-bake, or a step that is mid-swap, is not a settled
+  /// state to take another step from. A save running beside either is not a
+  /// reason to grey the buttons out: the store encodes and swaps tiles one
+  /// operation at a time, so the write simply waits for the page to settle.
+  bool get _drawingIsSettled =>
+      !isRasterizing && !_isReverting && active == null && activeEraser == null;
+
+  bool get canUndo => undoHistory.canUndo && _drawingIsSettled;
+  bool get canRedo => undoHistory.canRedo && _drawingIsSettled;
+
+  Future<void> _undo() => _revert(
+        take: undoHistory.takeUndo,
+        keep: undoHistory.putRedo,
+        putBack: undoHistory.putUndo,
+      );
+
+  Future<void> _redo() => _revert(
+        take: undoHistory.takeRedo,
+        keep: undoHistory.putUndo,
+        putBack: undoHistory.putRedo,
+      );
+
+  /// Swaps one step of the journal back into the paper. What the swap
+  /// replaces goes on the other stack, so undo and redo are the same
+  /// operation seen from either side, and a step that could not be swapped
+  /// goes back where it came from instead of vanishing from the history.
+  Future<void> _revert({
+    required RasterTileSnapshot? Function() take,
+    required void Function(RasterTileSnapshot replaced) keep,
+    required void Function(RasterTileSnapshot step) putBack,
+  }) async {
+    final step = take();
+    if (step == null) return;
+    setState(() => _isReverting = true);
+    final operation = rasterDrawing.restore(step);
+    _revertOperation = operation;
+    RasterTileSnapshot? replaced;
+    Object? failure;
+    try {
+      replaced = await operation;
+    } catch (error) {
+      failure = error;
+    }
+    _revertOperation = null;
+    if (!mounted) return;
+    if (failure != null) {
+      putBack(step);
+      setState(() => _isReverting = false);
+      _showRasterError(failure);
+      return;
+    }
+    if (replaced != null) keep(replaced);
+    setState(() => _isReverting = false);
+    _markChanged();
   }
 
   Future<void> _persist() async {
@@ -1240,34 +1860,15 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     widget.note.title = titleController.text.trim().isEmpty
         ? 'Untitled note'
         : titleController.text.trim();
-    widget.note.textBlocks =
-        textControllers.map((controller) => controller.text).toList();
-    widget.note.textBlockFormats = textFormats
-        .map((format) => TextBlockFormat(
-              bold: format.bold,
-              color: format.color,
-              fontSize: format.fontSize,
-              x: format.x,
-              y: format.y,
-              width: format.width,
-              height: format.height,
-              styles: format.styles
-                  .map((style) => TextStyleRange(
-                        start: style.start,
-                        end: style.end,
-                        bold: style.bold,
-                        color: style.color,
-                        fontSize: style.fontSize,
-                      ))
-                  .toList(),
-            ))
-        .toList();
+    widget.note.text = textController.text;
+    documentFormat.styles = textController.styles;
+    widget.note.textFormat = documentFormat.copy();
     widget.note.rasterTiles = await rasterDrawing.encode();
     widget.note.rasterPages.clear();
     widget.note.rasterWidth = rasterDrawing.width;
     widget.note.rasterPageHeight = rasterDrawing.pageHeight;
     widget.note.strokes.clear();
-    widget.note.updated = DateTime.now();
+    widget.note.updated = DateTime.now().toUtc();
     await store.save(widget.note);
     driveSyncDebouncer.schedule(currentNoteId: widget.note.id);
   }
@@ -1276,8 +1877,26 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     syncService.syncInBackground(
       currentNoteId: widget.note.id,
       onResult: (result) {
-        if (!mounted ||
-            (hasUnsavedChanges && !rasterMigrationOnlyDirty) ||
+        if (!mounted) return;
+        if (!result.isSynced) {
+          // An automatic sync must not nag while the folder was never chosen,
+          // but a folder that stopped working has to be surfaced once.
+          if (result.status == DriveSyncStatus.unavailable &&
+              !reportedSyncProblem) {
+            reportedSyncProblem = true;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'The Google Drive folder is unavailable, '
+                  'so notes are not syncing',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+        reportedSyncProblem = false;
+        if ((hasUnsavedChanges && !rasterMigrationOnlyDirty) ||
             isSaving ||
             isRasterizing ||
             active != null ||
@@ -1293,17 +1912,47 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> save({bool showMessage = true}) {
-    final activeSave = _saveOperation;
-    if (activeSave != null) return activeSave;
-    final operation = _performSave(showMessage: showMessage);
-    _saveOperation = operation;
-    return operation.whenComplete(() {
-      if (identical(_saveOperation, operation)) _saveOperation = null;
-    });
+  /// The installer path can terminate the process, so nothing may still be
+  /// waiting for the manual save when it starts.
+  ///
+  /// [update] is the release this screen is already showing. Without it the
+  /// check runs again, which costs a round trip and can come back with
+  /// nothing if the release moved in between.
+  Future<void> _installAvailableUpdate({UpdateInfo? update}) async {
+    await _finalizeActiveStroke();
+    if (hasUnsavedChanges) {
+      await autosave.saveNow();
+      if (saveFailed || hasUnsavedChanges) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Update stopped because the note is unsaved'),
+            ),
+          );
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
+    final known = update;
+    if (known == null) {
+      await UpdateService.prompt(context);
+    } else {
+      await UpdateService.install(context, known);
+    }
   }
 
-  Future<void> _performSave({required bool showMessage}) async {
+  /// Flushes through the autosave queue so a manual press cannot start a
+  /// second write beside a save the controller is already running.
+  Future<void> _saveNow() => autosave.saveNow();
+
+  /// The one write path. Everything that needs this note on disk — the
+  /// debounce, a button press, a lifecycle pause, a window close, and the
+  /// widget and sync actions that refuse to run on an unsaved note — goes
+  /// through [autosave], so two of them can never race for the same file.
+  /// It reports through state only: the button says what the note is, and
+  /// [_onAutosaveStatus] is the single place a failed write is announced.
+  Future<void> _performSave() async {
     await _finalizeActiveStroke();
     final savingRevision = _editRevision;
     setState(() {
@@ -1320,29 +1969,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         hasUnsavedChanges = hasNewerChanges;
         if (!hasNewerChanges) rasterMigrationOnlyDirty = false;
       });
-      if (showMessage) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              hasNewerChanges
-                  ? 'Saved. Newer edits still need saving.'
-                  : 'Saved on this device',
-            ),
-          ),
-        );
-      }
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         isSaving = false;
         saveFailed = true;
         hasUnsavedChanges = true;
       });
-      if (showMessage) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $error')),
-        );
-      }
     }
   }
 
@@ -1350,8 +1983,39 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     await _finalizeActiveStroke();
     if (!mounted) return true;
     if (!hasUnsavedChanges) return true;
-    await save(showMessage: false);
-    if (!mounted) return false;
+    if (isSaving) {
+      await autosave.saveNow();
+      if (!mounted) return false;
+      if (saveFailed || hasUnsavedChanges) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('The note is still unsaved. Try saving again.'),
+          ),
+        );
+        return false;
+      }
+      return true;
+    }
+    final saveBeforeLeaving = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Unsaved changes'),
+        content: const Text('Save this note before leaving?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Stay'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('Save and leave'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || saveBeforeLeaving != true) return false;
+    await autosave.saveNow();
     if (saveFailed || hasUnsavedChanges) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1363,11 +2027,17 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     return true;
   }
 
+  // The button used to be the only way anything reached the disk, so 'Save'
+  // was the label whatever the note's state. With autosave running it says
+  // what pressing it would do now: nothing, one write, or the retry that
+  // failed.
   String get saveLabel => isSaving
       ? 'Saving'
       : saveFailed
           ? 'Retry save'
-          : 'Save';
+          : hasUnsavedChanges
+              ? 'Save now'
+              : 'Saved';
 
   IconData get saveIcon => isSaving
       ? Icons.hourglass_top
@@ -1375,7 +2045,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
           ? Icons.error_outline
           : hasUnsavedChanges
               ? Icons.save
-              : Icons.save_outlined;
+              : Icons.check;
 
   Future<Uint8List> renderPreview() async {
     final recorder = ui.PictureRecorder();
@@ -1390,19 +2060,32 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         orElse: () => PaperPattern.lined,
       ),
     ).paint(canvas, size);
-    if (rasterDrawing.pageHasTiles(0)) {
+    // The preview image is painted off the widget tree, so nothing asks the
+    // store for the tiles it is about to draw. The store decodes the page it
+    // picks itself, and it picks the first page that has ink: page zero is
+    // blank paper for a note whose strokes start further down, and that
+    // preview is what a home screen widget then shows.
+    await rasterDrawing.paintPreview(canvas, size);
+    // The document lives in canvas coordinates, so it takes the page's own
+    // scale rather than the raster's; without it a typed note pins as blank
+    // paper.
+    final document = _layoutDocument();
+    if (document.width > 0 && document.height > 0) {
       canvas.save();
       canvas.scale(
-        size.width / math.max(1, rasterDrawing.width),
-        size.height / math.max(1, rasterDrawing.pageHeight),
+        size.width / math.max(1, canvasWidth),
+        size.height / math.max(1, canvasPageHeight),
       );
-      rasterDrawing.paintPage(
+      document.paint(
         canvas,
-        0,
-        paint: Paint()..filterQuality = FilterQuality.medium,
+        Offset(
+          _documentPageMargin + _textContentLeft,
+          _documentPageMargin + _documentContentTop,
+        ),
       );
       canvas.restore();
     }
+    document.dispose();
     final picture = recorder.endRecording();
     final image = await picture.toImage(
       size.width.toInt(),
@@ -1414,8 +2097,37 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     return bytes!.buffer.asUint8List();
   }
 
+  /// How many cards of this app the launcher has on screen.
+  ///
+  /// The count is asked rather than assumed because a preview is not free -
+  /// it decodes the page it paints - and a phone with no card on it should
+  /// never pay for one.
+  Future<bool> _hasNoteWidgets() async {
+    final count = await widgetChannel.invokeMethod<int>('hasWidgets');
+    return (count ?? 0) > 0;
+  }
+
+  Future<void> _sendPreviewToWidget(Uint8List png) =>
+      widgetChannel.invokeMethod<void>('setNote', {
+        'title': widget.note.title,
+        'png': base64Encode(png),
+      });
+
+  /// One quiet complaint per editor, not one per save.
+  ///
+  /// A refresh nobody pressed a button for has no right to interrupt, but it
+  /// must not vanish either: a card that silently keeps the old note is
+  /// indistinguishable from a widget that does not work.
+  void _onWidgetRefreshFailed(Object error) {
+    if (widgetRefreshWarned || !mounted) return;
+    widgetRefreshWarned = true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Home screen widget not updated: $error')),
+    );
+  }
+
   Future<void> pinWidget() async {
-    await save(showMessage: false);
+    await autosave.saveNow();
     if (saveFailed || hasUnsavedChanges) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1435,10 +2147,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     }
     try {
       final png = await renderPreview();
-      await widgetChannel.invokeMethod('setNote', {
-        'title': widget.note.title,
-        'png': base64Encode(png),
-      });
+      await _sendPreviewToWidget(png);
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1452,6 +2161,15 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Widget error: ${e.message}')));
+    } catch (error) {
+      // A preview that never reached the channel leaves the widget showing
+      // whatever it showed before, which looks like a widget that does not
+      // work. Saying so is the only way the person can tell that apart from
+      // a launcher that was never given the note.
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Widget update failed: $error')),
+        );
     }
   }
 
@@ -1558,7 +2276,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   void _applySyncedNote(Note syncedCurrent) {
     if (identical(syncedCurrent, widget.note)) return;
     final oldRasterDrawing = rasterDrawing;
-    final nextRasterDrawing = RasterDrawingStore(
+    final nextRasterDrawing = _createRasterStore(
       width: syncedCurrent.rasterWidth,
       pageHeight: syncedCurrent.rasterPageHeight,
     );
@@ -1566,31 +2284,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     try {
       setState(() {
         rasterDrawing = nextRasterDrawing;
+        undoHistory.clear();
         rasterImagesLoaded = false;
         rasterImageError = null;
         legacyRasterizationScheduled = false;
         widget.note.title = syncedCurrent.title;
-        widget.note.textBlocks = List.of(syncedCurrent.textBlocks);
-        widget.note.textBlockFormats = syncedCurrent.textBlockFormats
-            .map((format) => TextBlockFormat(
-                  bold: format.bold,
-                  color: format.color,
-                  fontSize: format.fontSize,
-                  x: format.x,
-                  y: format.y,
-                  width: format.width,
-                  height: format.height,
-                  styles: format.styles
-                      .map((style) => TextStyleRange(
-                            start: style.start,
-                            end: style.end,
-                            bold: style.bold,
-                            color: style.color,
-                            fontSize: style.fontSize,
-                          ))
-                      .toList(),
-                ))
-            .toList();
+        widget.note.text = syncedCurrent.text;
+        widget.note.textFormat = syncedCurrent.textFormat.copy();
         widget.note.updated = syncedCurrent.updated;
         widget.note.strokes = List.of(syncedCurrent.strokes);
         widget.note.tasks = syncedCurrent.tasks;
@@ -1609,9 +2309,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         saveFailed = false;
         rasterMigrationOnlyDirty = false;
         titleController.text = syncedCurrent.title;
-        textBlockController.replace(
-          syncedCurrent.textBlocks,
-          formats: syncedCurrent.textBlockFormats,
+        _loadDocumentIntoEditor(
+          syncedCurrent.text,
+          syncedCurrent.textFormat,
         );
       });
     } finally {
@@ -1638,7 +2338,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       }
       return;
     }
-    await save(showMessage: false);
+    await autosave.saveNow();
     if (saveFailed || hasUnsavedChanges) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1655,20 +2355,44 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         chooseFolder: chooseFolder,
         currentNoteId: widget.note.id,
       );
-      if (result == null && !chooseFolder) {
+      if (result != null && !result.isSynced && !chooseFolder) {
         result = await syncService.sync(
           chooseFolder: true,
           currentNoteId: widget.note.id,
         );
       }
       if (result == null) return;
+      if (!result.isSynced) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result.status == DriveSyncStatus.notConfigured
+                    ? 'Choose a Google Drive folder to sync with'
+                    : 'Google Drive folder is unavailable',
+              ),
+              action: Platform.isAndroid
+                  ? SnackBarAction(
+                      label: 'Choose folder',
+                      onPressed: () => syncDrive(chooseFolder: true),
+                    )
+                  : null,
+            ),
+          );
+        }
+        return;
+      }
       final syncedCurrent = result.currentNote;
       if (syncedCurrent != null) _applySyncedNote(syncedCurrent);
       if (mounted) {
+        final skipped = result.skippedRemoteFiles;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Synced ${result.noteCount} notes with Google Drive',
+              skipped == 0
+                  ? 'Synced ${result.noteCount} notes with Google Drive'
+                  : 'Synced ${result.noteCount} notes with Google Drive '
+                      '($skipped remote file(s) were skipped)',
             ),
           ),
         );
@@ -1701,8 +2425,51 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     }
   }
 
-  Widget _drawingToolbar() {
+  /// How much of the block under the canvas the window can still carry.
+  /// The rows are fixed heights and the checklist scrolls inside its own
+  /// ceiling, so what is left over is worked out in the order the app
+  /// needs them: the ink tools first, then the paper, then the rows that
+  /// are a convenience - the stroke slider and, while typing, the ink row
+  /// that already has its way back at the top of the text row.
+  ({bool inkRow, bool strokeRow, double tasksHeight}) _bottomBlock(
+    double height,
+  ) {
+    const chooserHeight = 58.0;
+    const updateHeight = 44.0;
+    const textRowHeight = 60.0;
+    const strokeRowHeight = 52.0;
+    const inkRowHeight = 64.0;
+    const tasksHeaderHeight = 64.0;
+    const canvasFloor = 44.0;
+    final platform = Theme.of(context).platform;
+    // The two rows the block has to share the window with that are not
+    // part of it: the desktop tool chooser, and the update banner - which
+    // only some platforms are given at all.
+    final showsUpdateRow = platform == TargetPlatform.android ||
+        platform == TargetPlatform.windows;
+    var left = height -
+        (platform == TargetPlatform.android ? 0.0 : chooserHeight) -
+        (showsUpdateRow && UpdateService.availableUpdate.value != null
+            ? updateHeight
+            : 0.0);
+    final textTool = tool == DrawTool.text;
+    if (textTool) left -= textRowHeight;
+    final inkRow = !textTool || left >= inkRowHeight;
+    if (inkRow) left -= inkRowHeight;
+    final strokeRow =
+        toolWidths.containsKey(tool) && left >= strokeRowHeight + canvasFloor;
+    if (strokeRow) left -= strokeRowHeight;
+    final tasks = left - canvasFloor;
+    return (
+      inkRow: inkRow,
+      strokeRow: strokeRow,
+      tasksHeight: tasks < tasksHeaderHeight ? 0.0 : math.min(220.0, tasks),
+    );
+  }
+
+  Widget _drawingToolbar({required bool showStrokeRow}) {
     final tools = [
+      (DrawTool.hand, 'Hand'),
       (DrawTool.text, 'Text'),
       (DrawTool.pencil, 'Pencil'),
       (DrawTool.pen, 'Pen'),
@@ -1710,67 +2477,102 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       (DrawTool.eraser, 'Eraser'),
       (DrawTool.blur, 'Blur'),
     ];
-    final toolbar = SizedBox(
-      key: Key(
-        Theme.of(context).platform == TargetPlatform.android
-            ? 'android-drawing-toolbar'
-            : 'drawing-toolbar',
-      ),
-      height: 64,
-      child: Material(
-        elevation: 6,
-        child: Row(
-          children: [
-            for (final entry in tools)
-              Expanded(
-                child: IconButton(
-                  tooltip: entry.$2,
-                  style: IconButton.styleFrom(
-                    backgroundColor: tool == entry.$1
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : null,
+    // Eight squares with a gap between them need more width than a small
+    // phone has, and a slot narrower than a fingertip is not a control.
+    // Below that the row keeps its slots and slides sideways instead.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tight = constraints.maxWidth / (tools.length + 1) < 40;
+        Widget slot(Widget child) =>
+            tight ? SizedBox(width: 44, child: child) : Expanded(child: child);
+        final toolbar = SizedBox(
+          key: Key(
+            Theme.of(context).platform == TargetPlatform.android
+                ? 'android-drawing-toolbar'
+                : 'drawing-toolbar',
+          ),
+          height: 64,
+          child: Material(
+            elevation: 6,
+            // The button's own padding came off the chip's width, so the
+            // row was spending it on a gap the slot already provided.
+            child: IconButtonTheme(
+              data: IconButtonThemeData(
+                style: IconButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 8,
                   ),
-                  onPressed: () => _selectTool(entry.$1),
-                  icon: _toolbarIconFrame(_DrawingToolIcon(entry.$1)),
                 ),
               ),
-            Expanded(
-              child: PopupMenuButton<Color>(
-                tooltip: 'Drawing colour',
-                icon: _toolbarIconFrame(
-                  Icon(Icons.circle, color: _activeStrokeColor),
-                ),
-                onSelected: _setActiveStrokeColor,
-                itemBuilder: (_) => _colorMenuItems(_activeStrokeColor),
+              child: Row(
+                children: [
+                  for (final entry in tools)
+                    slot(IconButton(
+                      tooltip: entry.$2,
+                      style: IconButton.styleFrom(
+                        backgroundColor: tool == entry.$1
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : null,
+                      ),
+                      onPressed: () => _selectTool(entry.$1),
+                      icon: _toolbarIconFrame(_DrawingToolIcon(entry.$1)),
+                    )),
+                  slot(PopupMenuButton<Color>(
+                    tooltip: 'Drawing colour',
+                    icon: _toolbarIconFrame(
+                      Icon(Icons.circle, color: _activeStrokeColor),
+                    ),
+                    onSelected: _setActiveStrokeColor,
+                    itemBuilder: (_) => _colorMenuItems(_activeStrokeColor),
+                  )),
+                ],
               ),
             ),
+          ),
+        );
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showStrokeRow) _strokeWidthControls(),
+            tight
+                ? SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: toolbar,
+                  )
+                : toolbar,
           ],
-        ),
-      ),
-    );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (toolWidths.containsKey(tool)) _strokeWidthControls(),
-        toolbar,
-      ],
+        );
+      },
     );
   }
 
   Widget _toolbarIconFrame(Widget child) {
     final scheme = Theme.of(context).colorScheme;
-    final side = MediaQuery.sizeOf(context).width < 360 ? 40.0 : 48.0;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: SizedBox(
-        width: side,
-        height: side,
-        child: child,
-      ),
+    final requested = MediaQuery.sizeOf(context).width < 360 ? 40.0 : 48.0;
+    // The chip only ever gets the room its slot can hand over, and a slot
+    // that is narrower than the square asked for takes it out of the width
+    // alone - seven of them across a phone left every chip 39.7 wide by 48
+    // tall. Ask for the largest square the slot will actually give.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final side = math.min(
+          requested,
+          math.min(constraints.maxWidth, constraints.maxHeight),
+        );
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh,
+            border: Border.all(color: scheme.outlineVariant),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: SizedBox(
+            width: side,
+            height: side,
+            child: child,
+          ),
+        );
+      },
     );
   }
 
@@ -1786,9 +2588,17 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         child: Row(
           children: [
             const SizedBox(width: 8),
-            Tooltip(
-              message: label,
-              child: _toolbarIconFrame(const Icon(Icons.line_weight, size: 20)),
+            SizedBox(
+              width: 48,
+              height: 52,
+              child: Center(
+                child: Tooltip(
+                  message: label,
+                  child: _toolbarIconFrame(
+                    const Icon(Icons.line_weight, size: 20),
+                  ),
+                ),
+              ),
             ),
             Expanded(
               child: Slider(
@@ -1817,8 +2627,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   }
 
   Widget _textToolbar() {
-    final canFormat = textControllers.isNotEmpty;
-    final format = canFormat ? textFormats[activeTextIndex] : null;
     Widget slot(Widget child) => Expanded(child: Center(child: child));
     return SizedBox(
       key: const Key('text-toolbar'),
@@ -1833,14 +2641,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
               onPressed: () => _selectTool(DrawTool.pen),
               icon: const Icon(Icons.gesture),
             ))),
-            slot(_toolbarIconFrame(IconButton(
-              tooltip: 'Add text block',
-              onPressed: addTextBlock,
-              icon: _DrawingToolIcon(DrawTool.text, size: 20),
-            ))),
             slot(_toolbarIconFrame(PopupMenuButton<String>(
               tooltip: 'Lists',
-              enabled: canFormat,
               icon: const Icon(Icons.check_box_outlined),
               onSelected: (value) {
                 if (value == 'check') _toggleLinePrefix('☐ ');
@@ -1876,21 +2678,17 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
             ))),
             slot(_toolbarIconFrame(PopupMenuButton<Color>(
               tooltip: 'Text colour',
-              enabled: canFormat,
               onSelected: _setTextColor,
               icon: Icon(
                 Icons.format_color_text,
-                color: format == null ? null : Color(format.color),
+                color: Color(documentFormat.color),
               ),
-              itemBuilder: (_) => _colorMenuItems(
-                format == null ? Colors.black : Color(format.color),
-              ),
+              itemBuilder: (_) => _colorMenuItems(Color(documentFormat.color)),
             ))),
             slot(_toolbarIconFrame(PopupMenuButton<double>(
               tooltip: 'Font size',
-              enabled: canFormat,
               icon: Text(
-                format == null ? 'Aa' : '${format.fontSize.round()}',
+                '${documentFormat.fontSize.round()}',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               onSelected: _setTextFontSize,
@@ -1910,13 +2708,12 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
             ))),
             slot(_toolbarIconFrame(IconButton(
               tooltip: 'Bold',
-              isSelected: format?.bold ?? false,
-              onPressed: canFormat ? _toggleTextBold : null,
+              isSelected: documentFormat.bold,
+              onPressed: _toggleTextBold,
               icon: const Icon(Icons.format_bold),
             ))),
             slot(_toolbarIconFrame(PopupMenuButton<bool>(
               tooltip: 'Indent',
-              enabled: canFormat,
               icon: const Icon(Icons.format_indent_increase),
               onSelected: _changeIndent,
               itemBuilder: (_) => const [
@@ -1970,7 +2767,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                 ),
               ),
               TextButton.icon(
-                onPressed: () => UpdateService.prompt(context),
+                onPressed: () => _installAvailableUpdate(update: update),
                 style: TextButton.styleFrom(
                   foregroundColor: scheme.onSecondaryContainer,
                 ),
@@ -1985,213 +2782,90 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _canvasTextBlock(int index) {
-    final format = textFormats[index];
+  Widget _canvasTextDocument() {
     return Positioned(
-      key: ValueKey('canvas-text-block-$index'),
-      left: format.x,
-      top: format.y,
-      width: format.width,
-      height: format.height,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () => setState(() {
-          activeTextIndex = index;
-          tool = DrawTool.text;
-        }),
-        child: Padding(
-          padding: const EdgeInsets.only(top: 28),
-          child: TextField(
-            key: ValueKey('canvas-text-field-$index'),
-            controller: textControllers[index],
-            focusNode: textFocusNodes[index],
-            onChanged: (_) => _growTextBlockToFit(index),
-            onTap: () {
-              setState(() {
-                activeTextIndex = index;
-                tool = DrawTool.text;
-              });
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) _toggleChecklistAtSelection(index);
-              });
-            },
-            expands: true,
-            minLines: null,
-            maxLines: null,
-            keyboardType: TextInputType.multiline,
-            textAlignVertical: TextAlignVertical.top,
-            style: TextStyle(
-              color: Color(format.color),
-              fontSize: format.fontSize,
-              fontWeight: format.bold ? FontWeight.bold : FontWeight.normal,
-            ),
-            decoration: InputDecoration(
-              hintText: 'Text block ${index + 1}',
-              filled: false,
-              fillColor: Colors.transparent,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-            ),
+      key: const ValueKey('canvas-text-block-0'),
+      left: _documentPageMargin,
+      top: _documentPageMargin,
+      width: _documentColumnWidth,
+      // The document takes pointers only in text mode; every drawing tool
+      // leaves the canvas to decide, so a stroke can cross live text.
+      child: IgnorePointer(
+        key: documentFieldKey,
+        ignoring: tool != DrawTool.text,
+        child: TextField(
+          key: const ValueKey('canvas-text-field-0'),
+          controller: textController,
+          focusNode: textFocusNode,
+          onChanged: (_) {
+            _growPagesForDocument();
+            _markChanged();
+            // The layout has to run before the canvas can be moved to where
+            // the new line actually lands.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _revealDocumentCaret();
+            });
+          },
+          onTap: () => WidgetsBinding.instance
+              .addPostFrameCallback((_) => _toggleChecklistAtSelection()),
+          minLines: 1,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          textAlignVertical: TextAlignVertical.top,
+          style: _documentStyle,
+          decoration: const InputDecoration(
+            hintText: 'Text',
+            filled: false,
+            fillColor: Colors.transparent,
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: EdgeInsets.fromLTRB(8, 4, 8, 8),
           ),
         ),
       ),
     );
   }
 
-  Widget _canvasTextBlockControls(int index) {
-    final format = textFormats[index];
-    final selected = activeTextIndex == index && textFocusNodes[index].hasFocus;
-    final scale = math.max(0.001, canvasTransform.scale);
-    return Positioned(
-      key: ValueKey('canvas-text-block-controls-$index'),
-      left: format.x,
-      top: format.y,
-      width: format.width,
-      height: format.height,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.transparent,
-                  border: selected
-                      ? Border.all(color: Theme.of(context).colorScheme.primary)
-                      : null,
-                  borderRadius: BorderRadius.circular(6),
+  /// The eraser's live preview: blur's feather ramp, but every pass lays down
+  /// paper instead of blurred content, so the mark fades out to bare paper.
+  Widget _eraseStrokeLayer(Stroke stroke, {Key? key}) {
+    final paperPattern = PaperPattern.values.firstWhere(
+      (item) => item.name == widget.note.backgroundPattern,
+      orElse: () => PaperPattern.lined,
+    );
+    return Positioned.fill(
+      key: key,
+      child: IgnorePointer(
+        child: RepaintBoundary(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              for (var index = 0; index < strokeFeatherPasses.length; index++)
+                Opacity(
+                  opacity: strokeFeatherPasses[index].$2,
+                  child: ClipPath(
+                    clipBehavior: Clip.antiAlias,
+                    clipper: BlurStrokeClipper(
+                      stroke,
+                      widthScale: strokeFeatherPasses[index].$1,
+                      reclip: canvasRepaint,
+                    ),
+                    child: CustomPaint(
+                      key: ValueKey('erase-paper-$index'),
+                      painter: StrokePainter(
+                        const [],
+                        null,
+                        background: Color(widget.note.backgroundColor),
+                        pattern: paperPattern,
+                        paintStrokes: false,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
+            ],
           ),
-          if (selected)
-            Positioned(
-              left: 0,
-              right: 56,
-              top: 0,
-              height: 28,
-              child: Listener(
-                key: ValueKey('move-text-block-$index'),
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) => setState(() {
-                  activeTextIndex = index;
-                  tool = DrawTool.text;
-                }),
-                onPointerMove: (event) => setState(() {
-                  format.x = math.max(0, format.x + event.delta.dx / scale);
-                  format.y = math.max(0, format.y + event.delta.dy / scale);
-                }),
-                onPointerUp: (_) => _markChanged(),
-                onPointerCancel: (_) => _markChanged(),
-                child: const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: EdgeInsets.only(left: 6),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: PenninoColors.leatherRaised,
-                        borderRadius: BorderRadius.all(Radius.circular(5)),
-                        border: Border.fromBorderSide(
-                          BorderSide(color: PenninoColors.gold),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black38,
-                            blurRadius: 3,
-                            offset: Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                      child: SizedBox(
-                        width: 28,
-                        height: 24,
-                        child: Icon(
-                          Icons.drag_indicator,
-                          size: 18,
-                          color: PenninoColors.paleGold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          if (selected)
-            Positioned(
-              right: 24,
-              top: 0,
-              width: 28,
-              height: 28,
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                tooltip: 'Delete text block',
-                onPressed: () => removeTextBlock(index),
-                icon: const Icon(Icons.close, size: 18),
-              ),
-            ),
-          if (selected)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              width: 32,
-              height: 32,
-              child: Listener(
-                key: ValueKey('resize-text-block-$index'),
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) => setState(() {
-                  activeTextIndex = index;
-                  tool = DrawTool.text;
-                }),
-                onPointerMove: (event) => setState(() {
-                  format.width = math.max(
-                    140,
-                    format.width + event.delta.dx / scale,
-                  );
-                  format.height = math.max(
-                    90,
-                    format.height + event.delta.dy / scale,
-                  );
-                }),
-                onPointerUp: (_) {
-                  _growTextBlockToFit(index);
-                  _markChanged();
-                },
-                onPointerCancel: (_) {
-                  _growTextBlockToFit(index);
-                  _markChanged();
-                },
-                child: const Align(
-                  alignment: Alignment.bottomRight,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: PenninoColors.leatherRaised,
-                      borderRadius: BorderRadius.all(Radius.circular(5)),
-                      border: Border.fromBorderSide(
-                        BorderSide(color: PenninoColors.gold),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black38,
-                          blurRadius: 3,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: Icon(
-                        Icons.open_in_full,
-                        size: 16,
-                        color: PenninoColors.paleGold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -2202,16 +2876,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     required int layerIndex,
     Key? key,
   }) {
-    const passes = <(double, double, double)>[
-      (2.20, 2.5, 0.06),
-      (1.85, 4, 0.09),
-      (1.55, 6, 0.13),
-      (1.30, 8, 0.19),
-      (1.08, 10, 0.27),
-      (0.88, 12, 0.38),
-      (0.70, 14, 0.54),
-      (0.52, 16, 1.00),
-    ];
     final paperPattern = PaperPattern.values.firstWhere(
       (item) => item.name == widget.note.backgroundPattern,
       orElse: () => PaperPattern.lined,
@@ -2219,14 +2883,14 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     final layer = Stack(
       fit: StackFit.expand,
       children: [
-        for (var index = 0; index < passes.length; index++)
+        for (var index = 0; index < blurRampPasses.length; index++)
           Opacity(
-            opacity: passes[index].$3,
+            opacity: blurRampPasses[index].$2,
             child: ClipPath(
               clipBehavior: Clip.antiAlias,
               clipper: BlurStrokeClipper(
                 stroke,
-                widthScale: passes[index].$1,
+                widthScale: blurRampPasses[index].$1,
                 reclip: identical(stroke, active) ? canvasRepaint : null,
               ),
               child: Stack(
@@ -2245,8 +2909,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                   ImageFiltered(
                     key: ValueKey('blur-content-$index'),
                     imageFilter: ui.ImageFilter.blur(
-                      sigmaX: passes[index].$2,
-                      sigmaY: passes[index].$2,
+                      sigmaX: blurSigma,
+                      sigmaY: blurSigma,
                     ),
                     child: Stack(
                       fit: StackFit.expand,
@@ -2258,6 +2922,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                           painter: RasterDrawingPainter(
                             tiles: rasterDrawing.tiles,
                             pageHeight: canvasPageHeight.round(),
+                            allTileKeys: rasterDrawing.tileKeys,
+                            onNeedTiles: rasterDrawing.requestResident,
                             legacyStrokes: priorStrokes,
                           ),
                         ),
@@ -2350,9 +3016,19 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             actions: [
+              IconButton(
+                tooltip: 'Undo the last mark',
+                onPressed: canUndo ? _undo : null,
+                icon: const Icon(Icons.undo),
+              ),
+              IconButton(
+                tooltip: 'Redo the mark you took back',
+                onPressed: canRedo ? _redo : null,
+                icon: const Icon(Icons.redo),
+              ),
               if (MediaQuery.sizeOf(context).width >= 700)
                 TextButton.icon(
-                  onPressed: isSaving ? null : save,
+                  onPressed: isSaving ? null : _saveNow,
                   icon: Icon(saveIcon, size: 19),
                   label: Text(saveLabel),
                 )
@@ -2361,9 +3037,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                   tooltip: saveFailed
                       ? 'Save failed; retry'
                       : hasUnsavedChanges
-                          ? 'Save unsaved note'
-                          : 'Save note',
-                  onPressed: isSaving ? null : save,
+                          ? 'Save now; the note saves by itself otherwise'
+                          : 'All changes saved',
+                  onPressed: isSaving ? null : _saveNow,
                   icon: Icon(saveIcon),
                 ),
               PopupMenuButton<String>(
@@ -2389,7 +3065,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                       syncDrive(chooseFolder: true);
                       return;
                     case 'update':
-                      UpdateService.prompt(context);
+                      _installAvailableUpdate();
                       return;
                     case 'open-source':
                       _showOpenSourceNotice();
@@ -2463,331 +3139,332 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
               ),
             ],
           ),
-          body: Column(
-            children: [
-              if (Theme.of(context).platform != TargetPlatform.android)
-                SizedBox(
-                  height: 58,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    children: [
-                      for (final entry in [
-                        (DrawTool.text, 'Text'),
-                        (DrawTool.pencil, 'Pencil'),
-                        (DrawTool.pen, 'Pen'),
-                        (DrawTool.highlighter, 'Highlighter'),
-                        (DrawTool.eraser, 'Eraser'),
-                        (DrawTool.blur, 'Blur'),
-                      ])
-                        Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: ChoiceChip(
-                            label: Text(entry.$2),
-                            avatar: _DrawingToolIcon(entry.$1, size: 18),
-                            selected: tool == entry.$1,
-                            onSelected: (_) => _selectTool(entry.$1),
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: PopupMenuButton<Color>(
-                          tooltip: 'Drawing colour',
-                          onSelected: _setActiveStrokeColor,
-                          itemBuilder: (_) =>
-                              _colorMenuItems(_activeStrokeColor),
-                          child: Chip(
-                            avatar: Icon(
-                              Icons.circle,
-                              color: _activeStrokeColor,
+          body: LayoutBuilder(
+            // The rows under the canvas are fixed heights and a Column
+            // only ever hands its `Expanded` child what they leave behind,
+            // which is nothing once a landscape screen has lost half its
+            // height to the keyboard - the rows then spilled past the
+            // bottom of the window instead of giving any of themselves up.
+            builder: (context, body) {
+              final block = _bottomBlock(body.maxHeight);
+              return Column(
+                children: [
+                  if (Theme.of(context).platform != TargetPlatform.android)
+                    SizedBox(
+                      height: 58,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        children: [
+                          for (final entry in [
+                            (DrawTool.hand, 'Hand'),
+                            (DrawTool.text, 'Text'),
+                            (DrawTool.pencil, 'Pencil'),
+                            (DrawTool.pen, 'Pen'),
+                            (DrawTool.highlighter, 'Highlighter'),
+                            (DrawTool.eraser, 'Eraser'),
+                            (DrawTool.blur, 'Blur'),
+                          ])
+                            Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: ChoiceChip(
+                                label: Text(entry.$2),
+                                avatar: _DrawingToolIcon(entry.$1, size: 18),
+                                selected: tool == entry.$1,
+                                onSelected: (_) => _selectTool(entry.$1),
+                              ),
                             ),
-                            label: const Text('Colour'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (showTasks)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: taskController,
-                                onSubmitted: (_) => addTask(),
-                                decoration: const InputDecoration(
-                                  hintText: 'Add a task',
-                                  isDense: true,
-                                  border: OutlineInputBorder(),
+                          Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: PopupMenuButton<Color>(
+                              tooltip: 'Drawing colour',
+                              onSelected: _setActiveStrokeColor,
+                              itemBuilder: (_) =>
+                                  _colorMenuItems(_activeStrokeColor),
+                              child: Chip(
+                                avatar: Icon(
+                                  Icons.circle,
+                                  color: _activeStrokeColor,
                                 ),
+                                label: const Text('Colour'),
                               ),
                             ),
-                            IconButton(
-                              tooltip: 'Add task',
-                              onPressed: addTask,
-                              icon: const Icon(Icons.add_task),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      Flexible(
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: widget.note.tasks.length,
-                          itemBuilder: (context, index) {
-                            final task = widget.note.tasks[index];
-                            return CheckboxListTile(
-                              dense: true,
-                              value: task.done,
-                              onChanged: (value) =>
-                                  updateTask(index, done: value),
-                              title: Text(
-                                task.text,
-                                style: task.done
-                                    ? const TextStyle(
-                                        decoration: TextDecoration.lineThrough,
-                                      )
-                                    : null,
-                              ),
-                              secondary: IconButton(
-                                tooltip: 'Delete task',
-                                onPressed: () =>
-                                    updateTask(index, delete: true),
-                                icon: const Icon(Icons.close),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    canvasWidth = math.max(
-                      math.max(2000.0, constraints.maxWidth),
-                      rasterDrawing.width.toDouble(),
-                    );
-                    canvasViewportHeight = constraints.maxHeight;
-                    canvasPageHeight = rasterDrawing.pageHeight > 0
-                        ? rasterDrawing.pageHeight.toDouble()
-                        : math.max(1200.0, constraints.maxHeight * 1.5);
-                    _scheduleLegacyRasterization();
-                    final canvasHeight =
-                        canvasPageHeight * widget.note.pageCount;
-                    return ClipRect(
-                      child: Listener(
-                        behavior: HitTestBehavior.opaque,
-                        onPointerDown: _canvasPointerDown,
-                        onPointerMove: _canvasPointerMove,
-                        onPointerUp: _canvasPointerEnd,
-                        onPointerCancel: _canvasPointerEnd,
-                        onPointerSignal: _canvasPointerSignal,
-                        child: InteractiveViewer(
-                          transformationController: transformationController,
-                          alignment: Alignment.topLeft,
-                          constrained: false,
-                          panEnabled: false,
-                          scaleEnabled: false,
-                          boundaryMargin: const EdgeInsets.all(500),
-                          minScale: 0.25,
-                          maxScale: 5,
-                          child: SizedBox(
-                            width: canvasWidth,
-                            height: canvasHeight,
-                            child: Stack(
-                              key: const Key('canvas-layer-stack'),
-                              clipBehavior: Clip.none,
+                    ),
+                  if (showTasks && block.tasksHeight > 0)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: block.tasksHeight),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                            child: Row(
                               children: [
-                                Positioned.fill(
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTapUp: tool == DrawTool.text
-                                        ? (details) => _createTextBlock(
-                                              position: details.localPosition,
-                                            )
-                                        : null,
-                                    child: CustomPaint(
-                                      painter: StrokePainter(
-                                        const [],
-                                        null,
-                                        background: Color(
-                                          widget.note.backgroundColor,
-                                        ),
-                                        pattern: PaperPattern.values.firstWhere(
-                                          (item) =>
-                                              item.name ==
-                                              widget.note.backgroundPattern,
-                                          orElse: () => PaperPattern.lined,
-                                        ),
-                                      ),
+                                Expanded(
+                                  child: TextField(
+                                    controller: taskController,
+                                    onSubmitted: (_) => addTask(),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Add a task',
+                                      isDense: true,
+                                      border: OutlineInputBorder(),
                                     ),
                                   ),
                                 ),
-                                Positioned.fill(
-                                  key: const Key('raster-drawing-layer'),
-                                  child: IgnorePointer(
-                                    child: CustomPaint(
-                                      painter: RasterDrawingPainter(
-                                        tiles: rasterDrawing.tiles,
-                                        pageHeight: canvasPageHeight.round(),
-                                        legacyStrokes: widget.note.strokes,
-                                        activePreview:
-                                            active == null || active!.blur
-                                                ? null
-                                                : activePreview,
-                                        activeEraser: activeEraser,
-                                        repaint: canvasRepaint,
-                                      ),
-                                    ),
-                                  ),
+                                IconButton(
+                                  tooltip: 'Add task',
+                                  onPressed: addTask,
+                                  icon: const Icon(Icons.add_task),
                                 ),
-                                for (var index = 0;
-                                    index < activeStrokeChunks.length;
-                                    index++)
-                                  Positioned.fill(
-                                    key: ValueKey('active-stroke-chunk-$index'),
-                                    child: IgnorePointer(
-                                      child: RepaintBoundary(
-                                        child: CustomPaint(
-                                          painter: StrokePainter(
-                                            [activeStrokeChunks[index]],
-                                            null,
-                                            paintBackground: false,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                if (active != null && active!.blur)
-                                  _blurStrokeLayer(
-                                    active!,
-                                    priorStrokes: widget.note.strokes
-                                        .where((stroke) => !stroke.blur)
-                                        .toList(),
-                                    layerIndex: widget.note.strokes.length,
-                                    key: const Key('active-blur-layer'),
-                                  ),
-                                if (!rasterImagesLoaded || isRasterizing)
-                                  Positioned(
-                                    left: 0,
-                                    right: 0,
-                                    top: 0,
-                                    height: 2,
-                                    child: IgnorePointer(
-                                      child: Semantics(
-                                        label: 'Preparing drawing',
-                                        liveRegion: true,
-                                        child: ColoredBox(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                for (var page = 0;
-                                    page < widget.note.pageCount;
-                                    page++) ...[
-                                  if (page < widget.note.pageCount - 1)
-                                    Positioned(
-                                      key: ValueKey('page-divider-${page + 1}'),
-                                      left: 0,
-                                      right: 0,
-                                      top: canvasPageHeight * (page + 1) - 7,
-                                      height: 14,
-                                      child: const IgnorePointer(
-                                        child: ColoredBox(
-                                          color: Color(0xff34393d),
-                                        ),
-                                      ),
-                                    ),
-                                  Positioned(
-                                    key: ValueKey('page-number-${page + 1}'),
-                                    right: 18,
-                                    top: canvasPageHeight * (page + 1) - 34,
-                                    child: IgnorePointer(
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          color: PenninoColors.leatherInset,
-                                          borderRadius: BorderRadius.all(
-                                            Radius.circular(5),
-                                          ),
-                                          border: Border.fromBorderSide(
-                                            BorderSide(
-                                              color: PenninoColors.gold,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 3,
-                                          ),
-                                          child: Text(
-                                            '${page + 1}/${widget.note.pageCount}',
-                                            style: const TextStyle(
-                                              color: PenninoColors.paleGold,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                if (showText)
-                                  for (var index = 0;
-                                      index < textControllers.length;
-                                      index++)
-                                    _canvasTextBlock(index),
-                                if (showText)
-                                  for (var index = 0;
-                                      index < textControllers.length;
-                                      index++)
-                                    _canvasTextBlockControls(index),
                               ],
                             ),
                           ),
-                        ),
+                          Flexible(
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: widget.note.tasks.length,
+                              itemBuilder: (context, index) {
+                                final task = widget.note.tasks[index];
+                                return CheckboxListTile(
+                                  dense: true,
+                                  value: task.done,
+                                  onChanged: (value) =>
+                                      updateTask(index, done: value),
+                                  title: Text(
+                                    task.text,
+                                    style: task.done
+                                        ? const TextStyle(
+                                            decoration:
+                                                TextDecoration.lineThrough,
+                                          )
+                                        : null,
+                                  ),
+                                  secondary: IconButton(
+                                    tooltip: 'Delete task',
+                                    onPressed: () =>
+                                        updateTask(index, delete: true),
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ),
-                    );
-                  },
-                ),
-              ),
-              if (Theme.of(context).platform == TargetPlatform.android ||
-                  Theme.of(context).platform == TargetPlatform.windows)
-                ValueListenableBuilder<UpdateInfo?>(
-                  valueListenable: UpdateService.availableUpdate,
-                  builder: (context, update, _) => update == null
-                      ? const SizedBox.shrink()
-                      : _availableUpdateRow(update),
-                ),
-              if (tool == DrawTool.text)
-                SafeArea(
-                  top: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _textToolbar(),
-                      _drawingToolbar(),
-                    ],
+                    ),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        canvasWidth = math.max(
+                          math.max(2000.0, constraints.maxWidth),
+                          rasterDrawing.width.toDouble(),
+                        );
+                        canvasViewportHeight = constraints.maxHeight;
+                        canvasPageHeight = rasterDrawing.pageHeight > 0
+                            ? rasterDrawing.pageHeight.toDouble()
+                            : math.max(1200.0, constraints.maxHeight * 1.5);
+                        _scheduleLegacyRasterization();
+                        final canvasHeight =
+                            canvasPageHeight * widget.note.pageCount;
+                        final pattern = PaperPattern.values.firstWhere(
+                          (item) => item.name == widget.note.backgroundPattern,
+                          orElse: () => PaperPattern.lined,
+                        );
+                        return ClipRect(
+                          key: canvasClipKey,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: Listener(
+                                  behavior: HitTestBehavior.opaque,
+                                  onPointerDown: _canvasPointerDown,
+                                  onPointerMove: _canvasPointerMove,
+                                  onPointerUp: _canvasPointerEnd,
+                                  onPointerCancel: _canvasPointerEnd,
+                                  onPointerSignal: _canvasPointerSignal,
+                                  child: InteractiveViewer(
+                                    transformationController:
+                                        transformationController,
+                                    alignment: Alignment.topLeft,
+                                    constrained: false,
+                                    panEnabled: false,
+                                    scaleEnabled: false,
+                                    boundaryMargin: const EdgeInsets.all(500),
+                                    minScale: 0.25,
+                                    maxScale: 5,
+                                    child: SizedBox(
+                                      width: canvasWidth,
+                                      height: canvasHeight,
+                                      child: Stack(
+                                        key: const Key('canvas-layer-stack'),
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          Positioned.fill(
+                                            child: GestureDetector(
+                                              behavior: HitTestBehavior.opaque,
+                                              onTapUp: tool == DrawTool.text
+                                                  ? (_) => _focusDocumentAtEnd()
+                                                  : null,
+                                              child: CustomPaint(
+                                                painter: StrokePainter(
+                                                  const [],
+                                                  null,
+                                                  background: Color(
+                                                    widget.note.backgroundColor,
+                                                  ),
+                                                  pattern: pattern,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned.fill(
+                                            key: const Key(
+                                                'raster-drawing-layer'),
+                                            child: IgnorePointer(
+                                              child: CustomPaint(
+                                                painter: RasterDrawingPainter(
+                                                  tiles: rasterDrawing.tiles,
+                                                  pageHeight:
+                                                      canvasPageHeight.round(),
+                                                  allTileKeys:
+                                                      rasterDrawing.tileKeys,
+                                                  onNeedTiles: rasterDrawing
+                                                      .requestResident,
+                                                  legacyStrokes:
+                                                      widget.note.strokes,
+                                                  activePreview:
+                                                      active == null ||
+                                                              active!.blur
+                                                          ? null
+                                                          : activePreview,
+                                                  repaint: canvasRepaint,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          for (var index = 0;
+                                              index < activeStrokeChunks.length;
+                                              index++)
+                                            Positioned.fill(
+                                              key: ValueKey(
+                                                'active-stroke-chunk-$index',
+                                              ),
+                                              child: IgnorePointer(
+                                                child: RepaintBoundary(
+                                                  child: CustomPaint(
+                                                    painter: StrokePainter(
+                                                      [
+                                                        activeStrokeChunks[
+                                                            index]
+                                                      ],
+                                                      null,
+                                                      paintBackground: false,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          if (active != null && active!.blur)
+                                            _blurStrokeLayer(
+                                              active!,
+                                              priorStrokes: widget.note.strokes
+                                                  .where(
+                                                      (stroke) => !stroke.blur)
+                                                  .toList(),
+                                              layerIndex:
+                                                  widget.note.strokes.length,
+                                              key: const Key(
+                                                  'active-blur-layer'),
+                                            ),
+                                          if (activeEraser != null)
+                                            _eraseStrokeLayer(
+                                              activeEraser!,
+                                              key: const Key(
+                                                  'active-erase-layer'),
+                                            ),
+                                          if (!rasterImagesLoaded ||
+                                              isRasterizing)
+                                            Positioned(
+                                              left: 0,
+                                              right: 0,
+                                              top: 0,
+                                              height: 2,
+                                              child: IgnorePointer(
+                                                child: Semantics(
+                                                  label: 'Preparing drawing',
+                                                  liveRegion: true,
+                                                  child: ColoredBox(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          for (var page = 0;
+                                              page < widget.note.pageCount - 1;
+                                              page++)
+                                            Positioned(
+                                              key: ValueKey(
+                                                'page-divider-${page + 1}',
+                                              ),
+                                              left: 0,
+                                              right: 0,
+                                              top: canvasPageHeight *
+                                                      (page + 1) -
+                                                  7,
+                                              height: 14,
+                                              child: const IgnorePointer(
+                                                child: ColoredBox(
+                                                  color: Color(0xff34393d),
+                                                ),
+                                              ),
+                                            ),
+                                          if (showText) _canvasTextDocument(),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              _canvasPageIndicator(),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                )
-              else
-                SafeArea(
-                  top: false,
-                  child: _drawingToolbar(),
-                ),
-            ],
+                  if (Theme.of(context).platform == TargetPlatform.android ||
+                      Theme.of(context).platform == TargetPlatform.windows)
+                    ValueListenableBuilder<UpdateInfo?>(
+                      valueListenable: UpdateService.availableUpdate,
+                      builder: (context, update, _) => update == null
+                          ? const SizedBox.shrink()
+                          : _availableUpdateRow(update),
+                    ),
+                  if (tool == DrawTool.text)
+                    SafeArea(
+                      top: false,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _textToolbar(),
+                          if (block.inkRow)
+                            _drawingToolbar(showStrokeRow: block.strokeRow),
+                        ],
+                      ),
+                    )
+                  else
+                    SafeArea(
+                      top: false,
+                      child: _drawingToolbar(showStrokeRow: block.strokeRow),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       );

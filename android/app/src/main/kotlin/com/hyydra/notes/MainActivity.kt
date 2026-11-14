@@ -22,6 +22,12 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "notes/widget")
             .setMethodCallHandler { call, result ->
+                if (call.method == "hasWidgets") {
+                    // Asked before the Dart side renders anything: a phone with
+                    // no card on the home screen should never pay for a preview.
+                    result.success(NotesWidget.instanceCount(this))
+                    return@setMethodCallHandler
+                }
                 if (call.method != "setNote") {
                     result.notImplemented()
                     return@setMethodCallHandler
@@ -51,6 +57,13 @@ class MainActivity : FlutterActivity() {
                             val files = call.argument<Map<String, String>>("files") ?: emptyMap()
                             runSyncOperation(result) {
                                 writeFolder(files)
+                                null
+                            }
+                        }
+                        "deleteFiles" -> {
+                            val names = call.argument<List<String>>("names") ?: emptyList()
+                            runSyncOperation(result) {
+                                deleteFiles(names)
                                 null
                             }
                         }
@@ -266,6 +279,26 @@ class MainActivity : FlutterActivity() {
                 contentResolver, parent, "application/json", name
             ) ?: error("Could not create $name")
             writeText(uri, content, name)
+        }
+    }
+
+    /**
+     * Removes payloads from the shared folder so a deletion reaches other
+     * devices and a spent tombstone is cleaned up. Missing names are ignored:
+     * a payload may already be gone, and Drive mirrors deletions itself.
+     */
+    private fun deleteFiles(names: List<String>) {
+        if (names.isEmpty()) return
+        val parents = linkedSetOf(rootDocument(), syncFolder())
+        parents.forEach { parent ->
+            val existing = folderEntries(parent)
+            names.forEach { name ->
+                val entry = existing[name] ?: return@forEach
+                if (entry.mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    return@forEach
+                }
+                DocumentsContract.deleteDocument(contentResolver, entry.uri)
+            }
         }
     }
 
