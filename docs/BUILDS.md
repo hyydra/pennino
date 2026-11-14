@@ -7,6 +7,22 @@ those bytes; a build that is not listed here has not been checked that way.
 Releases before v0.4.27 are recorded in their handoff notes rather than here;
 the ledger starts with the first build after this habit was asked for.
 
+## 0.4.29+33 - 2026-11-14T22:05:50Z
+
+- Commit `aae50ed`, annotated tag `v0.4.29` (tag object `2274f6d`), release
+  run `43645828153` (windows, android, publish all success).
+- Android `Pennino-Android.apk`, 53,481,669 B, sha256
+  `a70730515fa4d5183c5d55f20eb349d8e1785295eba66ef71339d27eda649125`.
+- Windows `Pennino-Windows-Setup.exe`, 10,924,097 B, sha256
+  `9fd960afe35a644fb943f2dea51a84f55f52f02ec9df8c8d7af29fb14dbe8cb3`.
+- `apkanalyzer`: versionCode 33, versionName 0.4.29. Signer certificate
+  SHA-256 `f86428c3bbd47b522613ef6707b3ca57b24c06dc219fc50cf72a68b6a0285978`,
+  unchanged from v0.4.28.
+- Ships PR #69's raster viewport optimization. The regression case reduced
+  painter-wide key visits from 1,000 to one visible key; this is an operation
+  count, not a wall-clock benchmark. Record:
+  [publish-v0-4-29](./handoff/2026-11-14-publish-v0-4-29.md).
+
 ## 0.4.28+32 - 2026-11-14T21:17:09Z
 
 - Commit `5d752ac`, annotated tag `v0.4.28` (tag object `7a31926`), release
