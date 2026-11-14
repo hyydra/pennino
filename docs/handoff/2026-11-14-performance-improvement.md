@@ -3,8 +3,9 @@
 - Goal: identify and improve a measurable Pennino performance bottleneck
   without changing expected behavior.
 - Owner: Copilot.
-- State: implemented locally on `perf/raster-paint-visible-tiles`; targeted
-  tests and analysis pass. No performance PR or release yet.
+- State: implemented and committed as `eb63b71` on
+  `perf/raster-paint-visible-tiles`; now proceeding through the v0.4.29
+  release gates.
 
 ## Log
 
