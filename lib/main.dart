@@ -22,11 +22,13 @@ import 'note_store.dart';
 import 'pennino_theme.dart';
 import 'raster_drawing.dart';
 import 'rich_text_controller.dart';
+import 'tool_icons.dart';
 import 'update_service.dart';
 import 'quit_save.dart';
 import 'widget_refresh.dart';
 
 export 'app_version.dart' show appVersion;
+export 'tool_icons.dart' show DrawTool;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -368,191 +370,6 @@ class _LibraryPageState extends State<LibraryPage> {
           );
         },
       );
-}
-
-enum DrawTool {
-  hand,
-  text,
-  pencil,
-  pen,
-  highlighter,
-  eraser,
-  blur,
-}
-
-class _DrawingToolIcon extends StatelessWidget {
-  final DrawTool tool;
-  final double size;
-
-  const _DrawingToolIcon(this.tool, {this.size = 24});
-
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
-    if (tool == DrawTool.text) {
-      return CustomPaint(
-        key: const ValueKey('drawing-tool-icon-text'),
-        size: Size.square(size),
-        painter: _TextToolIconPainter(color),
-      );
-    }
-    if (tool == DrawTool.eraser) {
-      return CustomPaint(
-        key: const ValueKey('drawing-tool-icon-eraser'),
-        size: Size.square(size),
-        painter: _EraserToolIconPainter(
-          color,
-          Theme.of(context).colorScheme.primary,
-        ),
-      );
-    }
-    return Icon(_toolIconData(tool), size: size);
-  }
-
-  IconData _toolIconData(DrawTool tool) => switch (tool) {
-        DrawTool.hand => Icons.pan_tool_outlined,
-        DrawTool.text => Icons.title,
-        DrawTool.pencil => Icons.create_outlined,
-        DrawTool.pen => Icons.edit,
-        DrawTool.highlighter => Icons.border_color,
-        DrawTool.eraser => Icons.backspace_outlined,
-        DrawTool.blur => Icons.blur_on,
-      };
-}
-
-class _TextToolIconPainter extends CustomPainter {
-  final Color color;
-
-  const _TextToolIconPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = size.shortestSide * 0.11
-      ..strokeCap = StrokeCap.square;
-    canvas.drawLine(
-      Offset(size.width * 0.2, size.height * 0.26),
-      Offset(size.width * 0.8, size.height * 0.26),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.5, size.height * 0.26),
-      Offset(size.width * 0.5, size.height * 0.78),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _TextToolIconPainter oldDelegate) =>
-      color != oldDelegate.color;
-}
-
-class _FontSizeMarkIcon extends StatelessWidget {
-  const _FontSizeMarkIcon({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface;
-    return CustomPaint(
-      key: key,
-      size: const Size.square(24),
-      painter: _FontSizeMarkIconPainter(color),
-    );
-  }
-}
-
-class _FontSizeMarkIconPainter extends CustomPainter {
-  final Color color;
-
-  const _FontSizeMarkIconPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = size.shortestSide * 0.1
-      ..strokeCap = StrokeCap.square;
-    canvas.drawLine(
-      Offset(size.width * 0.05, size.height * 0.25),
-      Offset(size.width * 0.45, size.height * 0.25),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.25, size.height * 0.25),
-      Offset(size.width * 0.25, size.height * 0.78),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.68, size.height * 0.36),
-      Offset(size.width * 0.68, size.height * 0.78),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.54, size.height * 0.50),
-      Offset(size.width * 0.85, size.height * 0.50),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _FontSizeMarkIconPainter oldDelegate) =>
-      color != oldDelegate.color;
-}
-
-class _EraserToolIconPainter extends CustomPainter {
-  final Color color;
-  final Color accentColor;
-
-  const _EraserToolIconPainter(this.color, this.accentColor);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final body = Rect.fromCenter(
-      center: Offset.zero,
-      width: size.shortestSide * 0.76,
-      height: size.shortestSide * 0.40,
-    );
-    final rubber = RRect.fromRectAndRadius(
-      body,
-      Radius.circular(size.shortestSide * 0.055),
-    );
-    canvas
-      ..save()
-      ..translate(center.dx, center.dy)
-      ..rotate(-math.pi / 4);
-    canvas.drawRRect(
-      rubber,
-      Paint()..color = color.withValues(alpha: 0.16),
-    );
-    canvas.save();
-    canvas.clipRRect(rubber);
-    canvas.drawRect(
-      Rect.fromLTRB(body.left, body.top, 0, body.bottom),
-      Paint()..color = accentColor.withValues(alpha: 0.48),
-    );
-    canvas.restore();
-    final outline = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.shortestSide * 0.09
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
-    canvas.drawRRect(rubber, outline);
-    canvas.drawLine(
-      Offset(0, body.top),
-      Offset(0, body.bottom),
-      outline,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _EraserToolIconPainter oldDelegate) =>
-      color != oldDelegate.color || accentColor != oldDelegate.accentColor;
 }
 
 class EditorPage extends StatefulWidget {
@@ -2528,7 +2345,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                             : null,
                       ),
                       onPressed: () => _selectTool(entry.$1),
-                      icon: _toolbarIconFrame(_DrawingToolIcon(entry.$1)),
+                      icon: _toolbarIconFrame(DrawingToolIcon(entry.$1)),
                     )),
                   slot(PopupMenuButton<Color>(
                     tooltip: 'Drawing colour',
@@ -2709,7 +2526,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                   PopupMenuItem(
                     value: size,
                     child: Row(children: [
-                      _FontSizeMarkIcon(
+                      FontSizeMarkIcon(
                         key: ValueKey('font-size-mark-tt-${size.round()}'),
                       ),
                       const SizedBox(width: 12),
@@ -3092,7 +2909,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                   PopupMenuItem(
                     value: 'text',
                     child: ListTile(
-                      leading: const _DrawingToolIcon(DrawTool.text),
+                      leading: const DrawingToolIcon(DrawTool.text),
                       title: Text(
                           showText ? 'Hide typed text' : 'Show typed text'),
                     ),
@@ -3185,7 +3002,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                               padding: const EdgeInsets.all(4),
                               child: ChoiceChip(
                                 label: Text(entry.$2),
-                                avatar: _DrawingToolIcon(entry.$1, size: 18),
+                                avatar: DrawingToolIcon(entry.$1, size: 18),
                                 selected: tool == entry.$1,
                                 onSelected: (_) => _selectTool(entry.$1),
                               ),

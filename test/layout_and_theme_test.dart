@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/main.dart';
-import 'package:notes_app/note_data.dart';
-import 'package:notes_app/pennino_theme.dart';
+import 'package:pennino/main.dart';
+import 'package:pennino/note_data.dart';
+import 'package:pennino/pennino_theme.dart';
 
 Note layoutNote() => Note(
       id: 'layout-note',

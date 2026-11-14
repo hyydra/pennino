@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/update_service.dart';
+import 'package:pennino/update_service.dart';
 
 /// The installer the fake server publishes. The digest is the one a real
 /// release would carry, so the verification step is exercised for real.

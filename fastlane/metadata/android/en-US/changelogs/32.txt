@@ -1,0 +1,1 @@
+Pennino now saves your note before the app quits, and Drive sync no longer overwrites newer edits you made while a sync was running. If a newer local edit is kept, the sync says so.

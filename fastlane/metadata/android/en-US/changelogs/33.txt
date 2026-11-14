@@ -1,0 +1,1 @@
+Drawing stays smooth on long notes: only the part of the page you are looking at is painted, so panning and zooming a note full of ink is noticeably lighter.

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/main.dart';
-import 'package:notes_app/note_data.dart';
+import 'package:pennino/main.dart';
+import 'package:pennino/note_data.dart';
 
 Note canvasNote({String text = ''}) => Note(
       id: 'canvas-pan-note',

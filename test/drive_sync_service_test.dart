@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/drive_sync_service.dart';
-import 'package:notes_app/note_data.dart';
-import 'package:notes_app/note_store.dart';
+import 'package:pennino/drive_sync_service.dart';
+import 'package:pennino/note_data.dart';
+import 'package:pennino/note_store.dart';
 
 class FakeSyncFolderBackend implements SyncFolderBackend {
   bool configured = true;

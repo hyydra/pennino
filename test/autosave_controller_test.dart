@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/autosave_controller.dart';
+import 'package:pennino/autosave_controller.dart';
 
 void main() {
   test('an edit autosaves and reports saved state', () async {

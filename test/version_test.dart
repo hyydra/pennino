@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/main.dart';
-import 'package:notes_app/update_service.dart';
+import 'package:pennino/main.dart';
+import 'package:pennino/update_service.dart';
 
 void main() {
   test('the embedded release version is present', () {
