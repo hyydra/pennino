@@ -80,6 +80,22 @@ class PausedSyncFolderBackend implements SyncFolderBackend {
   Future<bool> hasConfiguredFolder() async => true;
 }
 
+class PausedSnapshotStore extends NoteStore {
+  final snapshotTaken = Completer<void>();
+  final resume = Completer<void>();
+
+  PausedSnapshotStore(NoteDirectoryProvider directoryProvider)
+      : super(directoryProvider: directoryProvider);
+
+  @override
+  Future<List<Note>> load() async {
+    final snapshot = await super.load();
+    snapshotTaken.complete();
+    await resume.future;
+    return snapshot;
+  }
+}
+
 Note note(String id, String title, DateTime updated) => Note(
       id: id,
       title: title,
@@ -176,6 +192,37 @@ void main() {
     final stored = {for (final item in await store.load()) item.id: item};
     expect(stored['shared']?.title, 'Newer Drive');
     expect(stored['drive-only']?.title, 'Drive only');
+  });
+
+  test('sync preserves a local save made after its snapshot', () async {
+    final directory = await Directory.systemTemp.createTemp('drive-sync-');
+    addTearDown(() => directory.delete(recursive: true));
+    final store = PausedSnapshotStore(() async => directory);
+    await store.save(
+      note('shared', 'Old local', DateTime.utc(2026, 11, 11, 8)),
+    );
+    final backend = FakeSyncFolderBackend()
+      ..files = {
+        'shared.json': jsonEncode(
+          note('shared', 'Newer Drive', DateTime.utc(2026, 11, 11, 9)).toJson(),
+        ),
+      };
+    final service = DriveSyncService(store: store, backend: backend);
+
+    final sync = service.sync(currentNoteId: 'shared');
+    await store.snapshotTaken.future;
+    await store.save(
+      note('shared', 'Newest local', DateTime.utc(2026, 11, 11, 10)),
+    );
+    store.resume.complete();
+    final result = await sync;
+
+    expect((await store.loadNote('shared'))?.title, 'Newest local');
+    expect(result?.currentNote?.title, 'Newest local');
+    expect(
+      jsonDecode(backend.files['shared.json']!)['title'],
+      'Newest local',
+    );
   });
 
   test('syncing twice uploads only what the first sync changed', () async {

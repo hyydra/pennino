@@ -562,11 +562,13 @@ class EditorPage extends StatefulWidget {
   /// Overridable so a test can watch the notes the editor writes. Production
   /// always uses [noteDirectory].
   final NoteDirectoryProvider? directoryProvider;
+  final DriveSyncService? syncService;
   const EditorPage({
     super.key,
     required this.note,
     this.launcherMode = false,
     this.directoryProvider,
+    this.syncService,
   });
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -679,7 +681,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       widget.note.rasterTiles,
       legacyPages: widget.note.rasterPages,
     );
-    syncService = sharedSyncService(store);
+    syncService = widget.syncService ?? sharedSyncService(store);
     driveSyncDebouncer = DriveSyncDebouncer(service: syncService);
     // Created before any controller can report an edit: the listeners below
     // schedule through it from the first keystroke.
@@ -2328,7 +2330,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   }
 
   Future<void> syncDrive({bool chooseFolder = false}) async {
-    if (!Platform.isAndroid && !Platform.isWindows) {
+    if (!Platform.isAndroid &&
+        !Platform.isWindows &&
+        widget.syncService == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -2339,6 +2343,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       return;
     }
     await autosave.saveNow();
+    if (!mounted) return;
     if (saveFailed || hasUnsavedChanges) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2349,6 +2354,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       }
       return;
     }
+    final syncRevision = _editRevision;
     try {
       driveSyncDebouncer.cancel();
       var result = await syncService.sync(
@@ -2382,17 +2388,23 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         }
         return;
       }
+      if (!mounted) return;
+      final changedDuringSync = _editRevision != syncRevision;
       final syncedCurrent = result.currentNote;
-      if (syncedCurrent != null) _applySyncedNote(syncedCurrent);
+      if (!changedDuringSync && !hasUnsavedChanges && syncedCurrent != null) {
+        _applySyncedNote(syncedCurrent);
+      }
       if (mounted) {
         final skipped = result.skippedRemoteFiles;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              skipped == 0
-                  ? 'Synced ${result.noteCount} notes with Google Drive'
-                  : 'Synced ${result.noteCount} notes with Google Drive '
-                      '($skipped remote file(s) were skipped)',
+              changedDuringSync
+                  ? 'Synced ${result.noteCount} notes; newer edits were kept'
+                  : skipped == 0
+                      ? 'Synced ${result.noteCount} notes with Google Drive'
+                      : 'Synced ${result.noteCount} notes with Google Drive '
+                          '($skipped remote file(s) were skipped)',
             ),
           ),
         );

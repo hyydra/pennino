@@ -246,6 +246,36 @@ class NoteStore {
     });
   }
 
+  Future<Note> saveIfNewer(Note note) async {
+    _validateNoteId(note.id);
+    final encoded = jsonEncode(note.toJson());
+    final directory = await folder;
+    late Note saved;
+    await _queueForNote(directory, note.id, () async {
+      final current = await _readAvailableNote(directory, note.id);
+      if (current != null && !note.updated.isAfter(current.updated)) {
+        saved = current;
+        return;
+      }
+      await _clearSpentTombstone(directory, note);
+      await _save(directory, note.id, encoded);
+      saved = note;
+    });
+    return saved;
+  }
+
+  Future<Note?> _readAvailableNote(Directory directory, String noteId) async {
+    final primary = File('${directory.path}/$noteId.json');
+    final temporary = File('${primary.path}.tmp');
+    final backupTemporary = File('${primary.path}.bak.tmp');
+    final backup = File('${primary.path}.bak');
+    for (final file in [temporary, primary, backupTemporary, backup]) {
+      final note = await _readNoteFile(file, noteId);
+      if (note != null) return note;
+    }
+    return null;
+  }
+
   /// Removes a tombstone that the note being saved has already outlived, so a
   /// note edited after its deletion becomes visible again on every device.
   Future<void> _clearSpentTombstone(Directory directory, Note note) async {
