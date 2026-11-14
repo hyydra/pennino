@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/quit_save.dart';
+import 'package:pennino/quit_save.dart';
 
 void main() {
   test('quit waits for every editor and shares repeated close requests',

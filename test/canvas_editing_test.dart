@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/canvas_editing.dart';
-import 'package:notes_app/note_data.dart';
+import 'package:pennino/canvas_editing.dart';
+import 'package:pennino/note_data.dart';
 
 Stroke stroke(double startX, double startY, double endX, double endY) => Stroke(
       points: [CanvasPoint(startX, startY), CanvasPoint(endX, endY)],

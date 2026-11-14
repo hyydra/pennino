@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/widget_refresh.dart';
+import 'package:pennino/widget_refresh.dart';
 
 /// The three things the scheduler drives, counted instead of mocked.
 class _FakeWidgetBridge {

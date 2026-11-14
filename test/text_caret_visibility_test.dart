@@ -3,8 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderEditable;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/main.dart';
-import 'package:notes_app/note_data.dart';
+import 'package:pennino/main.dart';
+import 'package:pennino/note_data.dart';
 
 /// Lines long enough that the last one cannot fit in a phone canvas the
 /// keyboard has already shrunk.

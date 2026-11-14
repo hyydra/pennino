@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/note_data.dart';
+import 'package:pennino/note_data.dart';
 
 void main() {
   test('legacy JSON migrates to the current format', () {

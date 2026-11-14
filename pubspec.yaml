@@ -1,5 +1,5 @@
-name: notes_app
-description: A handwriting-first note app for Android, Linux and Windows.
+name: pennino
+description: Handwriting-first, local-first notes for Android and Windows.
 publish_to: none
 version: 0.4.29+33
 environment:

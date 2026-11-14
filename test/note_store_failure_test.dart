@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/note_data.dart';
-import 'package:notes_app/note_store.dart';
+import 'package:pennino/note_data.dart';
+import 'package:pennino/note_store.dart';
 
 Note note(String title, DateTime updated) =>
     Note(id: 'failure-note', title: title, updated: updated, strokes: []);

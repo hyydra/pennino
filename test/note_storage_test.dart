@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/note_data.dart';
-import 'package:notes_app/note_storage.dart';
-import 'package:notes_app/note_store.dart';
+import 'package:pennino/note_data.dart';
+import 'package:pennino/note_storage.dart';
+import 'package:pennino/note_store.dart';
 
 String payload(String title) => jsonEncode({
       'id': 'migrated-note',

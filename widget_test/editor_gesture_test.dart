@@ -8,13 +8,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notes_app/canvas_painter.dart';
-import 'package:notes_app/main.dart';
-import 'package:notes_app/note_data.dart';
-import 'package:notes_app/note_store.dart';
-import 'package:notes_app/raster_drawing.dart';
-import 'package:notes_app/rich_text_controller.dart';
-import 'package:notes_app/update_service.dart';
+import 'package:pennino/canvas_painter.dart';
+import 'package:pennino/main.dart';
+import 'package:pennino/note_data.dart';
+import 'package:pennino/note_store.dart';
+import 'package:pennino/raster_drawing.dart';
+import 'package:pennino/rich_text_controller.dart';
+import 'package:pennino/update_service.dart';
 
 Note noteWithStroke() => Note(
       id: 'gesture-note',
