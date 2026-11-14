@@ -113,6 +113,7 @@ class RasterDrawingStore {
   /// Every tile the note holds, as PNG bytes - the complete copy when a tile
   /// is not in [tiles], a cache of it when it is.
   final Map<RasterTileKey, String> _encodedTiles = {};
+  final Map<int, Set<RasterTileKey>> _keysByPage = {};
   final Set<RasterTileKey> _dirtyTiles = {};
   final Set<RasterTileKey> _decoding = {};
   Map<RasterTileKey, Uint8List?>? _recording;
@@ -127,18 +128,52 @@ class RasterDrawingStore {
   RasterDrawingStore({this.width = 0, this.pageHeight = 0});
 
   /// Tiles the note holds, whether or not they are in memory.
-  int get tileCount => _allKeys.length;
+  int get tileCount =>
+      _keysByPage.values.fold(0, (count, keys) => count + keys.length);
 
   /// Tiles currently held as pixels.
   int get residentTileCount => tiles.length;
 
   Iterable<RasterTileKey> get _allKeys =>
-      {...tiles.keys, ..._encodedTiles.keys};
+      _keysByPage.values.expand((keys) => keys);
 
   Iterable<RasterTileKey> get tileKeys => List.unmodifiable(_allKeys);
 
   Iterable<RasterTileKey> keysForPage(int page) =>
-      [for (final key in _allKeys) if (key.page == page) key];
+      List.unmodifiable(_keysByPage[page] ?? const <RasterTileKey>{});
+
+  /// Finds intersecting tiles by visiting only pages touched by [bounds].
+  Iterable<RasterTileKey> keysInBounds(
+    Rect bounds, {
+    required int pageHeight,
+  }) sync* {
+    if (pageHeight <= 0 || bounds.isEmpty || bounds.bottom <= 0) return;
+    final firstPage = math.max(0, (bounds.top / pageHeight).floor()).toInt();
+    final lastPage = (bounds.bottom / pageHeight).ceil() - 1;
+    if (lastPage < firstPage) return;
+    for (var page = firstPage; page <= lastPage; page++) {
+      for (final key in _keysByPage[page] ?? const <RasterTileKey>{}) {
+        final tileBounds = Rect.fromLTWH(
+          key.column * tileSize.toDouble(),
+          key.page * pageHeight.toDouble() + key.row * tileSize.toDouble(),
+          tileSize.toDouble(),
+          tileSize.toDouble(),
+        );
+        if (tileBounds.overlaps(bounds)) yield key;
+      }
+    }
+  }
+
+  void _registerKey(RasterTileKey key) {
+    _keysByPage.putIfAbsent(key.page, () => <RasterTileKey>{}).add(key);
+  }
+
+  void _unregisterKey(RasterTileKey key) {
+    final pageKeys = _keysByPage[key.page];
+    if (pageKeys == null) return;
+    pageKeys.remove(key);
+    if (pageKeys.isEmpty) _keysByPage.remove(key.page);
+  }
 
   /// Tile work that reads every tile, or swaps them in and out, runs one at a
   /// time: a save encodes tiles one by one and a revert disposes and replaces
@@ -202,6 +237,7 @@ class RasterDrawingStore {
         current?.dispose();
         tiles.remove(entry.key);
         _encodedTiles.remove(entry.key);
+        _unregisterKey(entry.key);
         continue;
       }
       final image = await decodeImageFromList(bytes);
@@ -212,6 +248,7 @@ class RasterDrawingStore {
       current?.dispose();
       tiles[entry.key] = image;
       _encodedTiles.remove(entry.key);
+      _registerKey(entry.key);
       _dirtyTiles.add(entry.key);
     }
     return RasterTileSnapshot(replaced);
@@ -247,6 +284,7 @@ class RasterDrawingStore {
     for (final entry in encodedTiles.entries) {
       final key = RasterTileKey.parse(entry.key);
       _encodedTiles[key] = entry.value;
+      _registerKey(key);
       if (key.page == firstPage) {
         await _decodeTile(key, entry.value);
         if (_disposed) return;
@@ -362,6 +400,7 @@ class RasterDrawingStore {
             }
             final key = RasterTileKey(entry.key, column, row);
             tiles[key] = tile;
+            _registerKey(key);
             _dirtyTiles.add(key);
           } finally {
             picture.dispose();
@@ -498,16 +537,17 @@ class RasterDrawingStore {
         key.page * pageHeight.toDouble() + key.row * tileSize.toDouble(),
       );
 
-  bool pageHasTiles(int page) => _allKeys.any((key) => key.page == page);
+  bool pageHasTiles(int page) => _keysByPage.containsKey(page);
 
   void paintPage(Canvas canvas, int page, {Paint? paint}) {
-    for (final entry in tiles.entries) {
-      if (entry.key.page != page) continue;
+    for (final key in keysForPage(page)) {
+      final image = tiles[key];
+      if (image == null) continue;
       canvas.drawImage(
-        entry.value,
+        image,
         Offset(
-          entry.key.column * tileSize.toDouble(),
-          entry.key.row * tileSize.toDouble(),
+          key.column * tileSize.toDouble(),
+          key.row * tileSize.toDouble(),
         ),
         paint ?? Paint(),
       );
@@ -555,6 +595,7 @@ class RasterDrawingStore {
     }
     tiles.clear();
     _encodedTiles.clear();
+    _keysByPage.clear();
     _dirtyTiles.clear();
   }
 
@@ -901,6 +942,7 @@ class RasterDrawingStore {
       previous?.dispose();
       tiles[key] = image;
       _encodedTiles.remove(key);
+      _registerKey(key);
       _dirtyTiles.add(key);
     } finally {
       picture.dispose();
@@ -950,12 +992,16 @@ class RasterDrawingPainter extends CustomPainter {
   /// on a decode, so the page shows its paper for a frame and its ink on the
   /// repaint [RasterDrawingStore.onTilesDecoded] asks for.
   final Iterable<RasterTileKey> allTileKeys;
+
+  /// Optional indexed query for the tiles reachable from a paint clip.
+  final Iterable<RasterTileKey> Function(Rect bounds)? tileKeysInBounds;
   final void Function(Iterable<RasterTileKey> keys)? onNeedTiles;
 
   RasterDrawingPainter({
     required this.tiles,
     required this.pageHeight,
     this.allTileKeys = const [],
+    this.tileKeysInBounds,
     this.onNeedTiles,
     this.legacyStrokes = const [],
     this.activeChunks = const [],
@@ -966,15 +1012,22 @@ class RasterDrawingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final clipBounds = canvas.getLocalClipBounds();
-    if (onNeedTiles != null && allTileKeys.isNotEmpty) {
+    final visibleKeys = tileKeysInBounds != null
+        ? tileKeysInBounds!(clipBounds).toList()
+        : {
+            for (final key in allTileKeys)
+              if (_keyBounds(key).overlaps(clipBounds)) key,
+            for (final key in tiles.keys)
+              if (_keyBounds(key).overlaps(clipBounds)) key,
+          }.toList();
+    if (onNeedTiles != null) {
       final missing = [
-        for (final key in allTileKeys)
-          if (!tiles.containsKey(key) && _keyBounds(key).overlaps(clipBounds))
-            key,
+        for (final key in visibleKeys)
+          if (!tiles.containsKey(key)) key,
       ];
       if (missing.isNotEmpty) onNeedTiles!(missing);
     }
-    _paintContent(canvas, size, clipBounds);
+    _paintContent(canvas, size, clipBounds, visibleKeys);
   }
 
   /// Where a tile sits. A tile that is not decoded has no image to read its
@@ -989,18 +1042,25 @@ class RasterDrawingPainter extends CustomPainter {
         RasterDrawingStore.tileSize.toDouble(),
       );
 
-  void _paintContent(Canvas canvas, Size size, Rect clipBounds) {
-    for (final entry in tiles.entries) {
+  void _paintContent(
+    Canvas canvas,
+    Size size,
+    Rect clipBounds,
+    Iterable<RasterTileKey> visibleKeys,
+  ) {
+    for (final key in visibleKeys) {
+      final image = tiles[key];
+      if (image == null) continue;
       final offset = Offset(
-        entry.key.column * RasterDrawingStore.tileSize.toDouble(),
-        entry.key.page * pageHeight.toDouble() +
-            entry.key.row * RasterDrawingStore.tileSize.toDouble(),
+        key.column * RasterDrawingStore.tileSize.toDouble(),
+        key.page * pageHeight.toDouble() +
+            key.row * RasterDrawingStore.tileSize.toDouble(),
       );
-      final tileBounds = offset &
-          Size(entry.value.width.toDouble(), entry.value.height.toDouble());
+      final tileBounds =
+          offset & Size(image.width.toDouble(), image.height.toDouble());
       if (tileBounds.overlaps(clipBounds)) {
         canvas.drawImage(
-          entry.value,
+          image,
           offset,
           Paint()..filterQuality = FilterQuality.medium,
         );

@@ -4,7 +4,7 @@
 
 - Latest published release: v0.4.28, with Android APK and Windows installer.
 - Every build that goes up is written down in [BUILDS.md](./BUILDS.md), newest first, with the digests recomputed from the downloaded bytes; the ledger starts with v0.4.27.
-- Working branch: `main` after PR #63. The whole-repo review fixes, PRs #36-#46, are merged, and so is PR #47 (CI platform coverage); its workflow patches are deliberately checked in as files under `docs/patches/` because this credential cannot push to `.github/workflows/`.
+- Repository baseline: `main` after PR #68 (`acba5da`). The whole-repo review fixes, PRs #36-#46, are merged, and so is PR #47 (CI platform coverage); its workflow patches are deliberately checked in as files under `docs/patches/` because this credential cannot push to `.github/workflows/`.
 - Release commit: `05cc57b` (`v0.4.27`, the merge of PR #63, whose head is `e82f1e9`); the previous release was `57742f7` (`v0.4.26`, PR #60's head `5cdb700`).
 - Raster drawing migration, editor controls and tiled raster storage are included in the published v0.4.18 release.
 - Sync and save fixes (UTC timestamps, changed-notes-only upload, save before suspend or update) merged through PR #25 (`7aa0a54`) shipped in v0.4.19 and are still live in v0.4.20. The earlier `v0.4.18` tag was re-created at `7cf2ee6` after the post-merge workflow passed, which is why the previous notes here said the tag had been removed.
@@ -42,6 +42,7 @@
 - [Publish v0.4.26](./handoff/2026-11-14-publish-v0-4-26.md) — complete; published from `57742f7` through PR #60, assets verified from their downloaded bytes and the change proved by a literal inside `libapp.so`.
 - [A hand that pans and a page number that stays](./handoff/2026-11-14-hand-pan-and-pinned-page-number.md) — merged through PR #62 (`2565e0e`); the hand tool became selectable and pans the paper with one finger, and the page number moved off the paper to the view's fixed top-left corner. Shipped in v0.4.27.
 - [Publish v0.4.27](./handoff/2026-11-14-publish-v0-4-27.md) — complete; published from `05cc57b` through PR #63, assets verified from their downloaded bytes and the change proved by a literal inside `libapp.so`.
-- [Publish v0.4.28](./handoff/2026-11-14-publish-v0-4-28.md) — complete; published from `5d752ac` after PRs #66 and #67 and green post-merge CI; both assets verified from downloaded bytes.
-- [Pennino performance improvement](./handoff/2026-11-14-performance-improvement.md) — in progress; profiling and baseline investigation starts after v0.4.28 publication.
+- [Publish v0.4.28](./handoff/2026-11-14-publish-v0-4-28.md) — complete; published from `5d752ac` after PRs #66 and #67 and green post-merge CI; both assets verified from downloaded bytes. Its release-record updates merged through PR #68 (`acba5da`) after all checks passed.
+- [Publish v0.4.29](./handoff/2026-11-14-publish-v0-4-29.md) — PR #69 is open from `perf/raster-paint-visible-tiles`; platform checks are running before the version-bump and release gates.
+- [Pennino performance improvement](./handoff/2026-11-14-performance-improvement.md) — implemented locally on `perf/raster-paint-visible-tiles`; targeted tests and analysis passed.
 - [Publish v0.4.16](./handoff/2026-11-11-publish-v0-4-16.md) — complete.
