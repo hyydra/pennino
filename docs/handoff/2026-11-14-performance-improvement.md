@@ -3,9 +3,8 @@
 - Goal: identify and improve a measurable Pennino performance bottleneck
   without changing expected behavior.
 - Owner: Copilot.
-- State: implemented and committed as `eb63b71` on
-  `perf/raster-paint-visible-tiles`; now proceeding through the v0.4.29
-  release gates.
+- State: PR #69 is open from `perf/raster-paint-visible-tiles`; the change is
+  committed as `eb63b71` and proceeding through the v0.4.29 release gates.
 
 ## Log
 

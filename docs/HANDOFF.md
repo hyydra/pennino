@@ -43,6 +43,6 @@
 - [A hand that pans and a page number that stays](./handoff/2026-11-14-hand-pan-and-pinned-page-number.md) — merged through PR #62 (`2565e0e`); the hand tool became selectable and pans the paper with one finger, and the page number moved off the paper to the view's fixed top-left corner. Shipped in v0.4.27.
 - [Publish v0.4.27](./handoff/2026-11-14-publish-v0-4-27.md) — complete; published from `05cc57b` through PR #63, assets verified from their downloaded bytes and the change proved by a literal inside `libapp.so`.
 - [Publish v0.4.28](./handoff/2026-11-14-publish-v0-4-28.md) — complete; published from `5d752ac` after PRs #66 and #67 and green post-merge CI; both assets verified from downloaded bytes. Its release-record updates merged through PR #68 (`acba5da`) after all checks passed.
-- [Publish v0.4.29](./handoff/2026-11-14-publish-v0-4-29.md) — in progress; performance code is committed locally as `eb63b71`, with PR and release gates pending.
+- [Publish v0.4.29](./handoff/2026-11-14-publish-v0-4-29.md) — PR #69 is open from `perf/raster-paint-visible-tiles`; platform checks are running before the version-bump and release gates.
 - [Pennino performance improvement](./handoff/2026-11-14-performance-improvement.md) — implemented locally on `perf/raster-paint-visible-tiles`; targeted tests and analysis passed.
 - [Publish v0.4.16](./handoff/2026-11-11-publish-v0-4-16.md) — complete.
