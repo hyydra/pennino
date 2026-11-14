@@ -2,10 +2,10 @@
 
 ## Current state
 
-- Latest published release: v0.4.28, with Android APK and Windows installer.
+- Latest published release: v0.4.29, with verified Android APK and Windows installer.
 - Every build that goes up is written down in [BUILDS.md](./BUILDS.md), newest first, with the digests recomputed from the downloaded bytes; the ledger starts with v0.4.27.
-- Repository baseline: `main` after PR #68 (`acba5da`). The whole-repo review fixes, PRs #36-#46, are merged, and so is PR #47 (CI platform coverage); its workflow patches are deliberately checked in as files under `docs/patches/` because this credential cannot push to `.github/workflows/`.
-- Release commit: `05cc57b` (`v0.4.27`, the merge of PR #63, whose head is `e82f1e9`); the previous release was `57742f7` (`v0.4.26`, PR #60's head `5cdb700`).
+- Repository baseline: `main` after PR #70 (`aae50ed`). The whole-repo review fixes, PRs #36-#46, are merged, and so is PR #47 (CI platform coverage); its workflow patches are deliberately checked in as files under `docs/patches/` because this credential cannot push to `.github/workflows/`.
+- Release commit: `aae50ed` (`v0.4.29`, PR #70); the previous release was `5d752ac` (`v0.4.28`).
 - Raster drawing migration, editor controls and tiled raster storage are included in the published v0.4.18 release.
 - Sync and save fixes (UTC timestamps, changed-notes-only upload, save before suspend or update) merged through PR #25 (`7aa0a54`) shipped in v0.4.19 and are still live in v0.4.20. The earlier `v0.4.18` tag was re-created at `7cf2ee6` after the post-merge workflow passed, which is why the previous notes here said the tag had been removed.
 - Glyph-precise text activation (a text block opens only when the tap lands on its text; the rest of the block draws) merged through PR #28 (`010b2b5`) shipped in v0.4.20.
@@ -17,6 +17,7 @@
 - v0.4.26 ships one behaviour change: the home-screen card follows the note. A successful autosave schedules the preview on its own, the platform is asked whether a card exists before anything is rendered, and leaving the app flushes the pending one behind the save. Details in [publish-v0-4-26](./handoff/2026-11-14-publish-v0-4-26.md).
 - v0.4.27 ships one-finger panning and a page number that stays put: the hand tool became selectable, a hand drag moves the paper through the same viewport rule the wheel uses, and the page number left the paper for a fixed chip in the view's top-left corner. Details in [publish-v0-4-27](./handoff/2026-11-14-publish-v0-4-27.md).
 - v0.4.28 includes the save-before-quit branch change and protects newer local edits from Drive sync overwrites. Details and artifact verification are in [publish-v0-4-28](./handoff/2026-11-14-publish-v0-4-28.md).
+- v0.4.29 ships PR #69's indexed, viewport-bounded raster painting. Android and Windows assets were downloaded and verified; details are in [publish-v0-4-29](./handoff/2026-11-14-publish-v0-4-29.md).
 - The local post-merge builds in `artifacts/local-build-2026-11-11/` were built as v0.4.17 and are not the release assets.
 
 ## Task log
@@ -43,6 +44,6 @@
 - [A hand that pans and a page number that stays](./handoff/2026-11-14-hand-pan-and-pinned-page-number.md) — merged through PR #62 (`2565e0e`); the hand tool became selectable and pans the paper with one finger, and the page number moved off the paper to the view's fixed top-left corner. Shipped in v0.4.27.
 - [Publish v0.4.27](./handoff/2026-11-14-publish-v0-4-27.md) — complete; published from `05cc57b` through PR #63, assets verified from their downloaded bytes and the change proved by a literal inside `libapp.so`.
 - [Publish v0.4.28](./handoff/2026-11-14-publish-v0-4-28.md) — complete; published from `5d752ac` after PRs #66 and #67 and green post-merge CI; both assets verified from downloaded bytes. Its release-record updates merged through PR #68 (`acba5da`) after all checks passed.
-- [Publish v0.4.29](./handoff/2026-11-14-publish-v0-4-29.md) — performance PR #69 and post-merge CI passed; version-bump PR #70 for `0.4.29+33` is open with platform checks running.
-- [Pennino performance improvement](./handoff/2026-11-14-performance-improvement.md) — merged through PR #69 (`d8f829e`); operation-count regression test and full platform CI passed. Version-bump PR #70 is in progress.
+- [Publish v0.4.29](./handoff/2026-11-14-publish-v0-4-29.md) — complete; published from `aae50ed` after PRs #69 and #70 and green post-merge CI; both assets verified from downloaded bytes.
+- [Pennino performance improvement](./handoff/2026-11-14-performance-improvement.md) — merged through PR #69 (`d8f829e`) and shipped in v0.4.29.
 - [Publish v0.4.16](./handoff/2026-11-11-publish-v0-4-16.md) — complete.

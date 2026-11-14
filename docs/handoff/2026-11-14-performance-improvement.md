@@ -3,8 +3,8 @@
 - Goal: identify and improve a measurable Pennino performance bottleneck
   without changing expected behavior.
 - Owner: Copilot.
-- State: merged through PR #69 (`d8f829e`); PR and post-merge Android, Linux,
-  and Windows CI passed. Version-bump PR #70 is in progress.
+- State: shipped in v0.4.29 from `aae50ed`; the performance PR and all release
+  gates passed.
 
 ## Log
 
@@ -25,16 +25,18 @@
   - `flutter test test\\raster_drawing_test.dart` (26 tests)
   - `flutter analyze lib\\raster_drawing.dart lib\\main.dart test\\raster_drawing_test.dart`
   - `git diff --check`
+- PR #69 (`d8f829e`), version-bump PR #70 (`aae50ed`), and the post-merge CI
+  runs all passed. The v0.4.29 Android and Windows assets were verified after
+  publication.
 
 ## Running now
 
-- Review the final change set on `perf/raster-paint-visible-tiles`.
+- Nothing.
 
 ## Next
 
-- If broader validation is desired, run the full Flutter suite; the targeted
-  raster suite and analysis already pass.
-- Decide whether to publish a performance PR separately from v0.4.28.
+- A wall-clock benchmark on representative devices would be needed to claim
+  improved frame time.
 
 ## Don't repeat
 
