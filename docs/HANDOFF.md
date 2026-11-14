@@ -2,7 +2,7 @@
 
 ## Current state
 
-- Latest published release: v0.4.27, with Android APK and Windows installer.
+- Latest published release: v0.4.28, with Android APK and Windows installer.
 - Every build that goes up is written down in [BUILDS.md](./BUILDS.md), newest first, with the digests recomputed from the downloaded bytes; the ledger starts with v0.4.27.
 - Working branch: `main` after PR #63. The whole-repo review fixes, PRs #36-#46, are merged, and so is PR #47 (CI platform coverage); its workflow patches are deliberately checked in as files under `docs/patches/` because this credential cannot push to `.github/workflows/`.
 - Release commit: `05cc57b` (`v0.4.27`, the merge of PR #63, whose head is `e82f1e9`); the previous release was `57742f7` (`v0.4.26`, PR #60's head `5cdb700`).
@@ -16,6 +16,7 @@
 - v0.4.25 ships one behaviour change: the home-screen widget pins the first page that carries ink instead of blank paper, and a widget update that cannot be made reports the error rather than leaving the card as it was. It also carries two test-only fixes for waits that failed under CPU load. Details in [publish-v0-4-25](./handoff/2026-11-13-publish-v0-4-25.md).
 - v0.4.26 ships one behaviour change: the home-screen card follows the note. A successful autosave schedules the preview on its own, the platform is asked whether a card exists before anything is rendered, and leaving the app flushes the pending one behind the save. Details in [publish-v0-4-26](./handoff/2026-11-14-publish-v0-4-26.md).
 - v0.4.27 ships one-finger panning and a page number that stays put: the hand tool became selectable, a hand drag moves the paper through the same viewport rule the wheel uses, and the page number left the paper for a fixed chip in the view's top-left corner. Details in [publish-v0-4-27](./handoff/2026-11-14-publish-v0-4-27.md).
+- v0.4.28 includes the save-before-quit branch change and protects newer local edits from Drive sync overwrites. Details and artifact verification are in [publish-v0-4-28](./handoff/2026-11-14-publish-v0-4-28.md).
 - The local post-merge builds in `artifacts/local-build-2026-11-11/` were built as v0.4.17 and are not the release assets.
 
 ## Task log
@@ -41,5 +42,6 @@
 - [Publish v0.4.26](./handoff/2026-11-14-publish-v0-4-26.md) — complete; published from `57742f7` through PR #60, assets verified from their downloaded bytes and the change proved by a literal inside `libapp.so`.
 - [A hand that pans and a page number that stays](./handoff/2026-11-14-hand-pan-and-pinned-page-number.md) — merged through PR #62 (`2565e0e`); the hand tool became selectable and pans the paper with one finger, and the page number moved off the paper to the view's fixed top-left corner. Shipped in v0.4.27.
 - [Publish v0.4.27](./handoff/2026-11-14-publish-v0-4-27.md) — complete; published from `05cc57b` through PR #63, assets verified from their downloaded bytes and the change proved by a literal inside `libapp.so`.
-- [Publish v0.4.28](./handoff/2026-11-14-publish-v0-4-28.md) — PR #66 merged at `51e4364`; PR and post-merge CI passed. The `0.4.28+32` version-bump PR and release are pending. Includes the save-before-quit branch change and Drive sync data-loss fixes. Investigate performance after publication.
+- [Publish v0.4.28](./handoff/2026-11-14-publish-v0-4-28.md) — complete; published from `5d752ac` after PRs #66 and #67 and green post-merge CI; both assets verified from downloaded bytes.
+- [Pennino performance improvement](./handoff/2026-11-14-performance-improvement.md) — in progress; profiling and baseline investigation starts after v0.4.28 publication.
 - [Publish v0.4.16](./handoff/2026-11-11-publish-v0-4-16.md) — complete.
