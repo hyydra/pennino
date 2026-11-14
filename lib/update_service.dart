@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'app_version.dart';
+import 'quit_save.dart';
 
 class UpdateInfo {
   final String version;
@@ -140,10 +141,7 @@ class UpdateService {
         );
       }
       final release = jsonDecode(
-        await response
-            .transform(utf8.decoder)
-            .join()
-            .timeout(timeout),
+        await response.transform(utf8.decoder).join().timeout(timeout),
       ) as Map<String, dynamic>;
       final version =
           (release['tag_name'] as String? ?? '').replaceFirst('v', '');
@@ -224,13 +222,15 @@ class UpdateService {
 
     void armIdleTimer() {
       idleTimer?.cancel();
-      idleTimer = Timer(idleTimeout, () => settleError(
-            UpdateDownloadException(
-              'The update download stopped receiving data',
-              idleTimeout,
-            ),
-            StackTrace.current,
-          ));
+      idleTimer = Timer(
+          idleTimeout,
+          () => settleError(
+                UpdateDownloadException(
+                  'The update download stopped receiving data',
+                  idleTimeout,
+                ),
+                StackTrace.current,
+              ));
     }
 
     try {
@@ -246,7 +246,8 @@ class UpdateService {
       sink = partialFile.openWrite();
       if (cancel != null) {
         unawaited(cancel.then((_) => settleError(
-              const UpdateDownloadException('The update download was cancelled'),
+              const UpdateDownloadException(
+                  'The update download was cancelled'),
               StackTrace.current,
             )));
       }
@@ -419,6 +420,10 @@ class UpdateService {
       if (Platform.isAndroid) {
         await _channel.invokeMethod('install', {'path': file.path});
       } else {
+        if (!await QuitSaveCoordinator.saveAll()) {
+          throw StateError(
+              'Update stopped because the note could not be saved');
+        }
         // A previous Windows installer can keep its executable locked after
         // the app exits, so every attempt downloads into its own directory and
         // the app leaves the way clear before the installer runs.

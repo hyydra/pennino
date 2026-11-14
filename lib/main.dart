@@ -23,12 +23,14 @@ import 'pennino_theme.dart';
 import 'raster_drawing.dart';
 import 'rich_text_controller.dart';
 import 'update_service.dart';
+import 'quit_save.dart';
 import 'widget_refresh.dart';
 
 export 'app_version.dart' show appVersion;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  QuitSaveCoordinator.initialize();
   runApp(const NotesApp());
 }
 
@@ -560,11 +562,13 @@ class EditorPage extends StatefulWidget {
   /// Overridable so a test can watch the notes the editor writes. Production
   /// always uses [noteDirectory].
   final NoteDirectoryProvider? directoryProvider;
+  final DriveSyncService? syncService;
   const EditorPage({
     super.key,
     required this.note,
     this.launcherMode = false,
     this.directoryProvider,
+    this.syncService,
   });
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -585,9 +589,11 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   late final TextEditingController taskController;
   final TransformationController transformationController =
       TransformationController();
+
   /// The document field's wrapper, so the caret can be measured where the
   /// field actually paints it.
   final GlobalKey documentFieldKey = GlobalKey(debugLabel: 'document-field');
+
   /// The box the canvas is clipped to: everything under it is bottom menu.
   final GlobalKey canvasClipKey = GlobalKey(debugLabel: 'canvas-clip');
   final ValueNotifier<int> canvasRepaint = ValueNotifier(0);
@@ -662,6 +668,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    QuitSaveCoordinator.register(_confirmSaveBeforeLeaving);
     rasterDrawing = _createRasterStore(
       width: widget.note.rasterWidth,
       pageHeight: widget.note.rasterPageHeight,
@@ -674,7 +681,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       widget.note.rasterTiles,
       legacyPages: widget.note.rasterPages,
     );
-    syncService = sharedSyncService(store);
+    syncService = widget.syncService ?? sharedSyncService(store);
     driveSyncDebouncer = DriveSyncDebouncer(service: syncService);
     // Created before any controller can report an edit: the listeners below
     // schedule through it from the first keystroke.
@@ -721,6 +728,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     autosave.dispose();
     widgetRefresh.dispose();
     WidgetsBinding.instance.removeObserver(this);
+    QuitSaveCoordinator.unregister(_confirmSaveBeforeLeaving);
     driveSyncDebouncer.dispose();
     titleController.dispose();
     textController.dispose();
@@ -1621,12 +1629,11 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     }
     final centreDelta =
         (currentFirst + currentSecond) / 2 - (startFirst + startSecond) / 2;
-    final spreadDelta =
-        (currentFirst - currentSecond).distance -
+    final spreadDelta = (currentFirst - currentSecond).distance -
         (startFirst - startSecond).distance;
     _refreshCanvasViewport(
-      userScrolledDown: centreDelta.dy < -2 &&
-          centreDelta.distance >= spreadDelta.abs(),
+      userScrolledDown:
+          centreDelta.dy < -2 && centreDelta.distance >= spreadDelta.abs(),
     );
   }
 
@@ -1796,10 +1803,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   /// reason to grey the buttons out: the store encodes and swaps tiles one
   /// operation at a time, so the write simply waits for the page to settle.
   bool get _drawingIsSettled =>
-      !isRasterizing &&
-      !_isReverting &&
-      active == null &&
-      activeEraser == null;
+      !isRasterizing && !_isReverting && active == null && activeEraser == null;
 
   bool get canUndo => undoHistory.canUndo && _drawingIsSettled;
   bool get canRedo => undoHistory.canRedo && _drawingIsSettled;
@@ -1979,6 +1983,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
 
   Future<bool> _confirmSaveBeforeLeaving() async {
     await _finalizeActiveStroke();
+    if (!mounted) return true;
     if (!hasUnsavedChanges) return true;
     if (isSaving) {
       await autosave.saveNow();
@@ -2325,7 +2330,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   }
 
   Future<void> syncDrive({bool chooseFolder = false}) async {
-    if (!Platform.isAndroid && !Platform.isWindows) {
+    if (!Platform.isAndroid &&
+        !Platform.isWindows &&
+        widget.syncService == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -2336,6 +2343,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       return;
     }
     await autosave.saveNow();
+    if (!mounted) return;
     if (saveFailed || hasUnsavedChanges) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2346,6 +2354,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       }
       return;
     }
+    final syncRevision = _editRevision;
     try {
       driveSyncDebouncer.cancel();
       var result = await syncService.sync(
@@ -2379,17 +2388,23 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         }
         return;
       }
+      if (!mounted) return;
+      final changedDuringSync = _editRevision != syncRevision;
       final syncedCurrent = result.currentNote;
-      if (syncedCurrent != null) _applySyncedNote(syncedCurrent);
+      if (!changedDuringSync && !hasUnsavedChanges && syncedCurrent != null) {
+        _applySyncedNote(syncedCurrent);
+      }
       if (mounted) {
         final skipped = result.skippedRemoteFiles;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              skipped == 0
-                  ? 'Synced ${result.noteCount} notes with Google Drive'
-                  : 'Synced ${result.noteCount} notes with Google Drive '
-                      '($skipped remote file(s) were skipped)',
+              changedDuringSync
+                  ? 'Synced ${result.noteCount} notes; newer edits were kept'
+                  : skipped == 0
+                      ? 'Synced ${result.noteCount} notes with Google Drive'
+                      : 'Synced ${result.noteCount} notes with Google Drive '
+                          '($skipped remote file(s) were skipped)',
             ),
           ),
         );
@@ -2453,8 +2468,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     if (textTool) left -= textRowHeight;
     final inkRow = !textTool || left >= inkRowHeight;
     if (inkRow) left -= inkRowHeight;
-    final strokeRow = toolWidths.containsKey(tool) &&
-        left >= strokeRowHeight + canvasFloor;
+    final strokeRow =
+        toolWidths.containsKey(tool) && left >= strokeRowHeight + canvasFloor;
     if (strokeRow) left -= strokeRowHeight;
     final tasks = left - canvasFloor;
     return (
@@ -3145,312 +3160,322 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
             builder: (context, body) {
               final block = _bottomBlock(body.maxHeight);
               return Column(
-            children: [
-              if (Theme.of(context).platform != TargetPlatform.android)
-                SizedBox(
-                  height: 58,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    children: [
-                      for (final entry in [
-                        (DrawTool.hand, 'Hand'),
-                        (DrawTool.text, 'Text'),
-                        (DrawTool.pencil, 'Pencil'),
-                        (DrawTool.pen, 'Pen'),
-                        (DrawTool.highlighter, 'Highlighter'),
-                        (DrawTool.eraser, 'Eraser'),
-                        (DrawTool.blur, 'Blur'),
-                      ])
-                        Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: ChoiceChip(
-                            label: Text(entry.$2),
-                            avatar: _DrawingToolIcon(entry.$1, size: 18),
-                            selected: tool == entry.$1,
-                            onSelected: (_) => _selectTool(entry.$1),
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: PopupMenuButton<Color>(
-                          tooltip: 'Drawing colour',
-                          onSelected: _setActiveStrokeColor,
-                          itemBuilder: (_) =>
-                              _colorMenuItems(_activeStrokeColor),
-                          child: Chip(
-                            avatar: Icon(
-                              Icons.circle,
-                              color: _activeStrokeColor,
-                            ),
-                            label: const Text('Colour'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (showTasks && block.tasksHeight > 0)
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: block.tasksHeight),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: taskController,
-                                onSubmitted: (_) => addTask(),
-                                decoration: const InputDecoration(
-                                  hintText: 'Add a task',
-                                  isDense: true,
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Add task',
-                              onPressed: addTask,
-                              icon: const Icon(Icons.add_task),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Flexible(
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: widget.note.tasks.length,
-                          itemBuilder: (context, index) {
-                            final task = widget.note.tasks[index];
-                            return CheckboxListTile(
-                              dense: true,
-                              value: task.done,
-                              onChanged: (value) =>
-                                  updateTask(index, done: value),
-                              title: Text(
-                                task.text,
-                                style: task.done
-                                    ? const TextStyle(
-                                        decoration: TextDecoration.lineThrough,
-                                      )
-                                    : null,
-                              ),
-                              secondary: IconButton(
-                                tooltip: 'Delete task',
-                                onPressed: () =>
-                                    updateTask(index, delete: true),
-                                icon: const Icon(Icons.close),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    canvasWidth = math.max(
-                      math.max(2000.0, constraints.maxWidth),
-                      rasterDrawing.width.toDouble(),
-                    );
-                    canvasViewportHeight = constraints.maxHeight;
-                    canvasPageHeight = rasterDrawing.pageHeight > 0
-                        ? rasterDrawing.pageHeight.toDouble()
-                        : math.max(1200.0, constraints.maxHeight * 1.5);
-                    _scheduleLegacyRasterization();
-                    final canvasHeight =
-                        canvasPageHeight * widget.note.pageCount;
-                    final pattern = PaperPattern.values.firstWhere(
-                      (item) => item.name == widget.note.backgroundPattern,
-                      orElse: () => PaperPattern.lined,
-                    );
-                    return ClipRect(
-                      key: canvasClipKey,
-                      child: Stack(
+                children: [
+                  if (Theme.of(context).platform != TargetPlatform.android)
+                    SizedBox(
+                      height: 58,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                         children: [
-                          Positioned.fill(
-                            child: Listener(
-                              behavior: HitTestBehavior.opaque,
-                              onPointerDown: _canvasPointerDown,
-                              onPointerMove: _canvasPointerMove,
-                              onPointerUp: _canvasPointerEnd,
-                              onPointerCancel: _canvasPointerEnd,
-                              onPointerSignal: _canvasPointerSignal,
-                              child: InteractiveViewer(
-                                transformationController:
-                                    transformationController,
-                                alignment: Alignment.topLeft,
-                                constrained: false,
-                                panEnabled: false,
-                                scaleEnabled: false,
-                                boundaryMargin: const EdgeInsets.all(500),
-                                minScale: 0.25,
-                                maxScale: 5,
-                                child: SizedBox(
-                                  width: canvasWidth,
-                                  height: canvasHeight,
-                                  child: Stack(
-                                    key: const Key('canvas-layer-stack'),
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      Positioned.fill(
-                                        child: GestureDetector(
-                                          behavior: HitTestBehavior.opaque,
-                                          onTapUp: tool == DrawTool.text
-                                              ? (_) => _focusDocumentAtEnd()
-                                              : null,
-                                          child: CustomPaint(
-                                            painter: StrokePainter(
-                                              const [],
-                                              null,
-                                              background: Color(
-                                                widget.note.backgroundColor,
-                                              ),
-                                              pattern: pattern,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned.fill(
-                                        key: const Key('raster-drawing-layer'),
-                                        child: IgnorePointer(
-                                          child: CustomPaint(
-                                            painter: RasterDrawingPainter(
-                                              tiles: rasterDrawing.tiles,
-                                              pageHeight:
-                                                  canvasPageHeight.round(),
-                                              allTileKeys:
-                                                  rasterDrawing.tileKeys,
-                                              onNeedTiles:
-                                                  rasterDrawing.requestResident,
-                                              legacyStrokes:
-                                                  widget.note.strokes,
-                                              activePreview:
-                                                  active == null || active!.blur
-                                                      ? null
-                                                      : activePreview,
-                                              repaint: canvasRepaint,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      for (var index = 0;
-                                          index < activeStrokeChunks.length;
-                                          index++)
-                                        Positioned.fill(
-                                          key: ValueKey(
-                                            'active-stroke-chunk-$index',
-                                          ),
-                                          child: IgnorePointer(
-                                            child: RepaintBoundary(
+                          for (final entry in [
+                            (DrawTool.hand, 'Hand'),
+                            (DrawTool.text, 'Text'),
+                            (DrawTool.pencil, 'Pencil'),
+                            (DrawTool.pen, 'Pen'),
+                            (DrawTool.highlighter, 'Highlighter'),
+                            (DrawTool.eraser, 'Eraser'),
+                            (DrawTool.blur, 'Blur'),
+                          ])
+                            Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: ChoiceChip(
+                                label: Text(entry.$2),
+                                avatar: _DrawingToolIcon(entry.$1, size: 18),
+                                selected: tool == entry.$1,
+                                onSelected: (_) => _selectTool(entry.$1),
+                              ),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: PopupMenuButton<Color>(
+                              tooltip: 'Drawing colour',
+                              onSelected: _setActiveStrokeColor,
+                              itemBuilder: (_) =>
+                                  _colorMenuItems(_activeStrokeColor),
+                              child: Chip(
+                                avatar: Icon(
+                                  Icons.circle,
+                                  color: _activeStrokeColor,
+                                ),
+                                label: const Text('Colour'),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (showTasks && block.tasksHeight > 0)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: block.tasksHeight),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: taskController,
+                                    onSubmitted: (_) => addTask(),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Add a task',
+                                      isDense: true,
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Add task',
+                                  onPressed: addTask,
+                                  icon: const Icon(Icons.add_task),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Flexible(
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: widget.note.tasks.length,
+                              itemBuilder: (context, index) {
+                                final task = widget.note.tasks[index];
+                                return CheckboxListTile(
+                                  dense: true,
+                                  value: task.done,
+                                  onChanged: (value) =>
+                                      updateTask(index, done: value),
+                                  title: Text(
+                                    task.text,
+                                    style: task.done
+                                        ? const TextStyle(
+                                            decoration:
+                                                TextDecoration.lineThrough,
+                                          )
+                                        : null,
+                                  ),
+                                  secondary: IconButton(
+                                    tooltip: 'Delete task',
+                                    onPressed: () =>
+                                        updateTask(index, delete: true),
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        canvasWidth = math.max(
+                          math.max(2000.0, constraints.maxWidth),
+                          rasterDrawing.width.toDouble(),
+                        );
+                        canvasViewportHeight = constraints.maxHeight;
+                        canvasPageHeight = rasterDrawing.pageHeight > 0
+                            ? rasterDrawing.pageHeight.toDouble()
+                            : math.max(1200.0, constraints.maxHeight * 1.5);
+                        _scheduleLegacyRasterization();
+                        final canvasHeight =
+                            canvasPageHeight * widget.note.pageCount;
+                        final pattern = PaperPattern.values.firstWhere(
+                          (item) => item.name == widget.note.backgroundPattern,
+                          orElse: () => PaperPattern.lined,
+                        );
+                        return ClipRect(
+                          key: canvasClipKey,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: Listener(
+                                  behavior: HitTestBehavior.opaque,
+                                  onPointerDown: _canvasPointerDown,
+                                  onPointerMove: _canvasPointerMove,
+                                  onPointerUp: _canvasPointerEnd,
+                                  onPointerCancel: _canvasPointerEnd,
+                                  onPointerSignal: _canvasPointerSignal,
+                                  child: InteractiveViewer(
+                                    transformationController:
+                                        transformationController,
+                                    alignment: Alignment.topLeft,
+                                    constrained: false,
+                                    panEnabled: false,
+                                    scaleEnabled: false,
+                                    boundaryMargin: const EdgeInsets.all(500),
+                                    minScale: 0.25,
+                                    maxScale: 5,
+                                    child: SizedBox(
+                                      width: canvasWidth,
+                                      height: canvasHeight,
+                                      child: Stack(
+                                        key: const Key('canvas-layer-stack'),
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          Positioned.fill(
+                                            child: GestureDetector(
+                                              behavior: HitTestBehavior.opaque,
+                                              onTapUp: tool == DrawTool.text
+                                                  ? (_) => _focusDocumentAtEnd()
+                                                  : null,
                                               child: CustomPaint(
                                                 painter: StrokePainter(
-                                                  [activeStrokeChunks[index]],
+                                                  const [],
                                                   null,
-                                                  paintBackground: false,
+                                                  background: Color(
+                                                    widget.note.backgroundColor,
+                                                  ),
+                                                  pattern: pattern,
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      if (active != null && active!.blur)
-                                        _blurStrokeLayer(
-                                          active!,
-                                          priorStrokes: widget.note.strokes
-                                              .where((stroke) => !stroke.blur)
-                                              .toList(),
-                                          layerIndex:
-                                              widget.note.strokes.length,
-                                          key: const Key('active-blur-layer'),
-                                        ),
-                                      if (activeEraser != null)
-                                        _eraseStrokeLayer(
-                                          activeEraser!,
-                                          key: const Key('active-erase-layer'),
-                                        ),
-                                      if (!rasterImagesLoaded || isRasterizing)
-                                        Positioned(
-                                          left: 0,
-                                          right: 0,
-                                          top: 0,
-                                          height: 2,
-                                          child: IgnorePointer(
-                                            child: Semantics(
-                                              label: 'Preparing drawing',
-                                              liveRegion: true,
-                                              child: ColoredBox(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primary,
+                                          Positioned.fill(
+                                            key: const Key(
+                                                'raster-drawing-layer'),
+                                            child: IgnorePointer(
+                                              child: CustomPaint(
+                                                painter: RasterDrawingPainter(
+                                                  tiles: rasterDrawing.tiles,
+                                                  pageHeight:
+                                                      canvasPageHeight.round(),
+                                                  allTileKeys:
+                                                      rasterDrawing.tileKeys,
+                                                  onNeedTiles: rasterDrawing
+                                                      .requestResident,
+                                                  legacyStrokes:
+                                                      widget.note.strokes,
+                                                  activePreview:
+                                                      active == null ||
+                                                              active!.blur
+                                                          ? null
+                                                          : activePreview,
+                                                  repaint: canvasRepaint,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      for (var page = 0;
-                                          page < widget.note.pageCount - 1;
-                                          page++)
-                                        Positioned(
-                                          key: ValueKey(
-                                            'page-divider-${page + 1}',
-                                          ),
-                                          left: 0,
-                                          right: 0,
-                                          top:
-                                              canvasPageHeight * (page + 1) -
-                                                  7,
-                                          height: 14,
-                                          child: const IgnorePointer(
-                                            child: ColoredBox(
-                                              color: Color(0xff34393d),
+                                          for (var index = 0;
+                                              index < activeStrokeChunks.length;
+                                              index++)
+                                            Positioned.fill(
+                                              key: ValueKey(
+                                                'active-stroke-chunk-$index',
+                                              ),
+                                              child: IgnorePointer(
+                                                child: RepaintBoundary(
+                                                  child: CustomPaint(
+                                                    painter: StrokePainter(
+                                                      [
+                                                        activeStrokeChunks[
+                                                            index]
+                                                      ],
+                                                      null,
+                                                      paintBackground: false,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                      if (showText) _canvasTextDocument(),
-                                    ],
+                                          if (active != null && active!.blur)
+                                            _blurStrokeLayer(
+                                              active!,
+                                              priorStrokes: widget.note.strokes
+                                                  .where(
+                                                      (stroke) => !stroke.blur)
+                                                  .toList(),
+                                              layerIndex:
+                                                  widget.note.strokes.length,
+                                              key: const Key(
+                                                  'active-blur-layer'),
+                                            ),
+                                          if (activeEraser != null)
+                                            _eraseStrokeLayer(
+                                              activeEraser!,
+                                              key: const Key(
+                                                  'active-erase-layer'),
+                                            ),
+                                          if (!rasterImagesLoaded ||
+                                              isRasterizing)
+                                            Positioned(
+                                              left: 0,
+                                              right: 0,
+                                              top: 0,
+                                              height: 2,
+                                              child: IgnorePointer(
+                                                child: Semantics(
+                                                  label: 'Preparing drawing',
+                                                  liveRegion: true,
+                                                  child: ColoredBox(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          for (var page = 0;
+                                              page < widget.note.pageCount - 1;
+                                              page++)
+                                            Positioned(
+                                              key: ValueKey(
+                                                'page-divider-${page + 1}',
+                                              ),
+                                              left: 0,
+                                              right: 0,
+                                              top: canvasPageHeight *
+                                                      (page + 1) -
+                                                  7,
+                                              height: 14,
+                                              child: const IgnorePointer(
+                                                child: ColoredBox(
+                                                  color: Color(0xff34393d),
+                                                ),
+                                              ),
+                                            ),
+                                          if (showText) _canvasTextDocument(),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
+                              _canvasPageIndicator(),
+                            ],
                           ),
-                          _canvasPageIndicator(),
+                        );
+                      },
+                    ),
+                  ),
+                  if (Theme.of(context).platform == TargetPlatform.android ||
+                      Theme.of(context).platform == TargetPlatform.windows)
+                    ValueListenableBuilder<UpdateInfo?>(
+                      valueListenable: UpdateService.availableUpdate,
+                      builder: (context, update, _) => update == null
+                          ? const SizedBox.shrink()
+                          : _availableUpdateRow(update),
+                    ),
+                  if (tool == DrawTool.text)
+                    SafeArea(
+                      top: false,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _textToolbar(),
+                          if (block.inkRow)
+                            _drawingToolbar(showStrokeRow: block.strokeRow),
                         ],
                       ),
-                    );
-                  },
-                ),
-              ),
-              if (Theme.of(context).platform == TargetPlatform.android ||
-                  Theme.of(context).platform == TargetPlatform.windows)
-                ValueListenableBuilder<UpdateInfo?>(
-                  valueListenable: UpdateService.availableUpdate,
-                  builder: (context, update, _) => update == null
-                      ? const SizedBox.shrink()
-                      : _availableUpdateRow(update),
-                ),
-              if (tool == DrawTool.text)
-                SafeArea(
-                  top: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _textToolbar(),
-                      if (block.inkRow)
-                        _drawingToolbar(showStrokeRow: block.strokeRow),
-                    ],
-                  ),
-                )
-              else
-                SafeArea(
-                  top: false,
-                  child: _drawingToolbar(showStrokeRow: block.strokeRow),
-                ),
-            ],
-          );
+                    )
+                  else
+                    SafeArea(
+                      top: false,
+                      child: _drawingToolbar(showStrokeRow: block.strokeRow),
+                    ),
+                ],
+              );
             },
           ),
         ),

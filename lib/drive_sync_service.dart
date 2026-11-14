@@ -459,9 +459,8 @@ class DriveSyncService {
       }
       final local = merged[remote.id];
       if (local == null || remote.updated.isAfter(local.updated)) {
-        merged[remote.id] = remote;
         try {
-          await store.save(remote);
+          merged[remote.id] = await store.saveIfNewer(remote);
         } catch (_) {
           // One unwritable remote note must not abort the rest of the sync.
           merged.remove(remote.id);
