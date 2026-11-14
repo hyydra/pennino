@@ -4,7 +4,7 @@
   without changing expected behavior.
 - Owner: Copilot.
 - State: merged through PR #69 (`d8f829e`); PR and post-merge Android, Linux,
-  and Windows CI passed. The v0.4.29 version-bump gate is in progress.
+  and Windows CI passed. Version-bump PR #70 is in progress.
 
 ## Log
 
