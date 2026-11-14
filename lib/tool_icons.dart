@@ -16,7 +16,7 @@ class DrawingToolIcon extends StatelessWidget {
   final DrawTool tool;
   final double size;
 
-  const DrawingToolIcon(this.tool, {this.size = 24});
+  const DrawingToolIcon(this.tool, {super.key, this.size = 24});
 
   @override
   Widget build(BuildContext context) {

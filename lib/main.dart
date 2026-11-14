@@ -452,6 +452,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   int? drawingPointer;
   Offset? lastSampleViewportPosition;
   double canvasViewportHeight = 0;
+  double canvasViewportWidth = 0;
   double canvasPageHeight = 1200;
   double canvasWidth = 2000;
   late RasterDrawingStore rasterDrawing;
@@ -993,6 +994,29 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     _markChanged();
   }
 
+  /// The only way the view matrix is written. The paper is exactly as wide as
+  /// the viewport, so at the base scale there is nothing to pan sideways, the
+  /// paper never zooms out past that width, and its top edge is a hard stop.
+  /// The bottom is left to the viewport rule, which appends a page as the
+  /// reader approaches it.
+  void _setView(Matrix4 next) {
+    final scale = next.storage[0].abs().clamp(1.0, 5.0).toDouble();
+    var tx = next.storage[12];
+    var ty = next.storage[13];
+    if (canvasViewportWidth > 0) {
+      tx = tx
+          .clamp(math.min(0.0, canvasViewportWidth - canvasWidth * scale), 0.0)
+          .toDouble();
+    }
+    ty = math.min(ty, 0.0);
+    final bounded = Matrix4.identity()
+      ..[0] = scale
+      ..[5] = scale
+      ..[12] = tx
+      ..[13] = ty;
+    transformationController.value = bounded;
+  }
+
   CanvasTransform get canvasTransform {
     final matrix = transformationController.value;
     return CanvasTransform(
@@ -1258,7 +1282,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     if (shift == 0) return;
     final next = transformationController.value.clone();
     next[13] += shift;
-    transformationController.value = next;
+    _setView(next);
   }
 
   void move(PointerMoveEvent event) {
@@ -1377,7 +1401,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       final nextScale = previousDistance < 0.001
           ? transform.scale
           : (transform.scale * currentDistance / previousDistance)
-              .clamp(0.25, 5.0);
+              .clamp(1.0, 5.0);
       final sceneX =
           (previousCenter.dx - transform.translationX) / transform.scale;
       final sceneY =
@@ -1387,7 +1411,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       next[5] = nextScale;
       next[12] = currentCenter.dx - sceneX * nextScale;
       next[13] = currentCenter.dy - sceneY * nextScale;
-      transformationController.value = next;
+      _setView(next);
       _trackPinchRound(beforeUpdate, event.pointer);
       return;
     }
@@ -1399,7 +1423,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       final next = transformationController.value.clone();
       next[12] += delta.dx;
       next[13] += delta.dy;
-      transformationController.value = next;
+      _setView(next);
       _refreshCanvasViewport(userScrolledDown: delta.dy < -2);
       return;
     }
@@ -1471,7 +1495,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     final next = transformationController.value.clone();
     next[12] -= event.scrollDelta.dx;
     next[13] -= event.scrollDelta.dy;
-    transformationController.value = next;
+    _setView(next);
     _refreshCanvasViewport(userScrolledDown: event.scrollDelta.dy > 0);
   }
 
@@ -2120,7 +2144,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         widget.note.rasterPageHeight = syncedCurrent.rasterPageHeight;
         widget.note.rasterPages = Map.of(syncedCurrent.rasterPages);
         widget.note.rasterTiles = Map.of(syncedCurrent.rasterTiles);
-        canvasWidth = math.max(2000.0, syncedCurrent.rasterWidth.toDouble());
         if (syncedCurrent.rasterPageHeight > 0) {
           canvasPageHeight = syncedCurrent.rasterPageHeight.toDouble();
         }
@@ -3091,10 +3114,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        canvasWidth = math.max(
-                          math.max(2000.0, constraints.maxWidth),
-                          rasterDrawing.width.toDouble(),
-                        );
+                        canvasWidth = constraints.maxWidth;
+                        canvasViewportWidth = constraints.maxWidth;
                         canvasViewportHeight = constraints.maxHeight;
                         canvasPageHeight = rasterDrawing.pageHeight > 0
                             ? rasterDrawing.pageHeight.toDouble()
@@ -3125,8 +3146,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                                     constrained: false,
                                     panEnabled: false,
                                     scaleEnabled: false,
-                                    boundaryMargin: const EdgeInsets.all(500),
-                                    minScale: 0.25,
+                                    boundaryMargin: EdgeInsets.zero,
+                                    minScale: 1,
                                     maxScale: 5,
                                     child: SizedBox(
                                       width: canvasWidth,

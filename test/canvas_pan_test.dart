@@ -44,8 +44,7 @@ IconButton undoButton(WidgetTester tester) => tester.widget<IconButton>(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('one finger pans the paper with the hand tool',
-      (tester) async {
+  testWidgets('one finger pans the paper with the hand tool', (tester) async {
     await openEditor(tester);
     await pickTool(tester, 'Hand');
     final before = paperTopLeft(tester);
@@ -58,13 +57,32 @@ void main() {
 
     expect(
       during - before,
-      const Offset(-30, -80),
-      reason: 'the hand tool moves the paper by the finger delta',
+      const Offset(0, -80),
+      reason: 'the hand tool moves the paper up by the finger delta, and the '
+          'paper is as wide as the view, so it never moves sideways',
     );
     expect(
       undoButton(tester).onPressed,
       isNull,
       reason: 'a pan is not a mark, so there is nothing to undo',
+    );
+  });
+
+  testWidgets('the paper cannot be pulled past its top edge', (tester) async {
+    await openEditor(tester);
+    await pickTool(tester, 'Hand');
+    final before = paperTopLeft(tester);
+    final gesture = await tester.startGesture(before + const Offset(200, 200));
+    await gesture.moveBy(const Offset(25, 120));
+    await tester.pump();
+    final during = paperTopLeft(tester);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      during,
+      before,
+      reason: 'the top of the paper is a hard stop, in both directions',
     );
   });
 
