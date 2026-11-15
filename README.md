@@ -30,6 +30,7 @@ All versions and release notes are on the [releases page](https://github.com/hyy
 - Press a letter to start editing in place. The toolbar is always a single compact row: the text row while you type, the ink row while you draw.
 
 **Move around the page**
+- Text always wraps at a phone's page width (400 logical pixels), so a note reads the same on every device. On a bigger screen a thin vertical line marks that width, and the space to its right is free for drawing. The home-screen widget shows exactly that phone-width page, top-aligned and never stretched.
 - The page is as wide as your screen. There is nothing to scroll sideways, and the top edge is a firm stop. A drawing made on a wider screen keeps its width, and you pan sideways to reach it.
 - Text is the tool you start in. Press a letter to edit in place, press blank paper and drag to move the page, and tap blank paper to put the caret at the end. Nothing draws until you choose a drawing tool: use **Drawing tools** on the text row to switch to a single row with Pencil, Pen, Highlighter, Eraser and Blur, which draw with a finger, stylus or mouse. Choose the active tool again to go back to text. Two fingers pan and zoom in any tool, and so does the mouse wheel. Pinch to zoom from 1× to 5×.
 - Scrolling to the bottom adds one page. Zooming and scrolling up never do. The page count is saved with the note, and the current page shows in a fixed chip at the top-left of the view.
@@ -48,7 +49,7 @@ All versions and release notes are on the [releases page](https://github.com/hyy
 - Pennino uses the same visible `Pennino/notes` folder on every device and syncs both ways at startup and after each save. When the same note exists on both sides, the later update wins. No Google Cloud API key is needed.
 
 **Android home-screen widget**
-- Open a note, choose **Update home widget**, then add the Pennino widget from the launcher. It shows the last note you pinned, resizes from a compact card to a full page, and opens the launcher canvas when tapped. It is not a per-widget note picker yet.
+- Open a note, choose **Update home widget**, then add the Pennino widget from the launcher. It shows the top of the last note you pinned at the phone's page width, resizes from a compact card to a full page, and opens the launcher canvas when tapped. It is not a per-widget note picker yet.
 
 **Updates**
 - The app checks for a newer release on every start and shows an update row above the toolbar only when one exists. Downloads are verified against the release's SHA-256 digest before they are handed to the installer.

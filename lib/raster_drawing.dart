@@ -562,7 +562,7 @@ class RasterDrawingStore {
   /// picked before painting it - nothing here is a paint that can ask. The
   /// tiles of a page are drawn in that page's own coordinates, so one scale
   /// puts whichever page was picked into the picture.
-  Future<void> paintPreview(Canvas canvas, Size size) async {
+  Future<void> paintPreview(Canvas canvas, Size size, {double? scale}) async {
     _ensureNotDisposed();
     if (width <= 0 || pageHeight <= 0 || _allKeys.isEmpty) return;
     var page = _allKeys.first.page;
@@ -572,9 +572,11 @@ class RasterDrawingStore {
     await ensureResident(keysForPage(page));
     if (_disposed) return;
     canvas.save();
+    // A picture that wants a page at its true proportions passes one scale;
+    // otherwise the page is fitted to the picture, whatever its shape.
     canvas.scale(
-      size.width / width.toDouble(),
-      size.height / pageHeight.toDouble(),
+      scale ?? size.width / width.toDouble(),
+      scale ?? size.height / pageHeight.toDouble(),
     );
     paintPage(
       canvas,
