@@ -39,6 +39,9 @@ Future<void> openEditor(
     home: EditorPage(note: layoutNote()),
   ));
   await tester.pumpAndSettle();
+  // Text is the resting tool and shows only its own row; these tests are
+  // about the ink row, so start with a pen in hand.
+  await pickTool(tester, 'Drawing tools');
 }
 
 Future<void> pickTool(WidgetTester tester, String tooltip) async {
@@ -101,9 +104,9 @@ void main() {
         reason: 'a $chip chip is a squashed rectangle, not a square',
       );
     }
-    // The design asks for 48 on a screen this wide; the eight slots used
-    // to hand the chip only the 39.7 left over by the button's own padding.
-    expect(chips.first.width, greaterThanOrEqualTo(44));
+    // The design asks for 36 on a screen this wide; the slots used to hand
+    // the chip only what the button's own padding left over.
+    expect(chips.first.width, greaterThanOrEqualTo(34));
   });
 
   testWidgets('a narrow screen keeps every ink tool tappable', (tester) async {
@@ -121,8 +124,8 @@ void main() {
       expect(cell, findsOneWidget, reason: '$tool left the toolbar');
       expect(
         tester.getRect(cell).width,
-        greaterThanOrEqualTo(40),
-        reason: '$tool is smaller than a fingertip',
+        greaterThanOrEqualTo(34),
+        reason: '$tool is too small to hit',
       );
     }
   });
@@ -130,7 +133,6 @@ void main() {
   testWidgets('landscape with the keyboard up keeps the ink row',
       (tester) async {
     await openEditor(tester, size: const Size(800, 360), keyboard: 200);
-    await pickTool(tester, 'Pen');
     expect(tester.takeException(), isNull);
     final chip = tester.getRect(find.byTooltip('Pen'));
     expect(chip.bottom, lessThanOrEqualTo(360));

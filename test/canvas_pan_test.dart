@@ -27,10 +27,16 @@ Future<void> openEditor(WidgetTester tester, {String text = ''}) async {
   await tester.pumpAndSettle();
 }
 
-Future<void> pickTool(WidgetTester tester, String tooltip) async {
-  final byTip = find.byTooltip(tooltip);
-  if (byTip.evaluate().isEmpty) return;
-  await tester.tap(byTip, warnIfMissed: false);
+Future<void> pickTool(WidgetTester tester, String name) async {
+  var button = find.byTooltip(name);
+  if (button.evaluate().isEmpty) {
+    if (name == 'Text') return;
+    await tester.tap(find.byTooltip('Drawing tools'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    if (name == 'Pen') return;
+    button = find.byTooltip(name);
+  }
+  await tester.tap(button, warnIfMissed: false);
   await tester.pumpAndSettle();
 }
 

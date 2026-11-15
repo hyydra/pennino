@@ -2,9 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// [browse] is the resting state with no tool in hand; it has no toolbar entry.
 enum DrawTool {
-  browse,
   text,
   pencil,
   pen,
@@ -44,7 +42,6 @@ class DrawingToolIcon extends StatelessWidget {
   }
 
   IconData _toolIconData(DrawTool tool) => switch (tool) {
-        DrawTool.browse => Icons.pan_tool_outlined,
         DrawTool.text => Icons.title,
         DrawTool.pencil => Icons.create_outlined,
         DrawTool.pen => Icons.edit,

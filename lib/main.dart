@@ -436,7 +436,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   /// The box the canvas is clipped to: everything under it is bottom menu.
   final GlobalKey canvasClipKey = GlobalKey(debugLabel: 'canvas-clip');
   final ValueNotifier<int> canvasRepaint = ValueNotifier(0);
-  DrawTool tool = DrawTool.browse;
+  DrawTool tool = DrawTool.text;
   Color strokeColor = Colors.blue.shade800;
   Color highlighterColor = Colors.yellow;
   final Map<DrawTool, double> toolWidths = {
@@ -857,9 +857,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     }
     setState(() {
       // Drawing is something you pick up: choosing the tool in hand again puts
-      // it down, and the paper goes back to being dragged.
+      // it down, and the page goes back to text, where it is dragged.
       tool = nextTool == tool && nextTool != DrawTool.text
-          ? DrawTool.browse
+          ? DrawTool.text
           : nextTool;
       if (tool == DrawTool.text) showText = true;
     });
@@ -1092,7 +1092,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     // after each edit loses strokes. The write itself refuses a partly drawn
     // stroke, and the revision counter picks the new one up on the next save.
     if (tool == DrawTool.text ||
-        tool == DrawTool.browse ||
         isRasterizing ||
         active != null ||
         activeEraser != null ||
@@ -1357,7 +1356,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   }
 
   void move(PointerMoveEvent event) {
-    if (tool == DrawTool.text || tool == DrawTool.browse) return;
+    if (tool == DrawTool.text) return;
     if (tool == DrawTool.eraser) {
       if (activeEraser != null) _appendStrokePoint(event);
       return;
@@ -1419,13 +1418,10 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     unawaited(_finalizeActiveStroke());
   }
 
-  /// Without a drawing tool in hand there is nothing to draw, so the paper is
-  /// dragged: by any pointer when no tool is selected, and by a finger in text
-  /// mode, where the mouse selects text instead. With a drawing tool selected
-  /// every pointer draws, and two fingers pan and zoom.
-  bool _pointerPans(PointerEvent event) =>
-      tool == DrawTool.browse ||
-      (tool == DrawTool.text && event.kind == PointerDeviceKind.touch);
+  /// Text is the resting tool and has nothing to draw, so in it the paper is
+  /// dragged by any pointer that lands off the text. With a drawing tool
+  /// selected every pointer draws, and two fingers pan and zoom.
+  bool _pointerPans(PointerEvent event) => tool == DrawTool.text;
 
   void _canvasPointerDown(PointerDownEvent event) {
     canvasPointerPositions[event.pointer] = event.localPosition;
@@ -2367,27 +2363,24 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   ({bool inkRow, bool strokeRow, double tasksHeight}) _bottomBlock(
     double height,
   ) {
-    const chooserHeight = 58.0;
     const updateHeight = 44.0;
-    const textRowHeight = 60.0;
+    const textRowHeight = 48.0;
     const strokeRowHeight = 52.0;
-    const inkRowHeight = 64.0;
+    const inkRowHeight = 48.0;
     const tasksHeaderHeight = 64.0;
     const canvasFloor = 44.0;
     final platform = Theme.of(context).platform;
-    // The two rows the block has to share the window with that are not
-    // part of it: the desktop tool chooser, and the update banner - which
-    // only some platforms are given at all.
+    // The row the block has to share the window with that is not part of
+    // it: the update banner - which only some platforms are given at all.
     final showsUpdateRow = platform == TargetPlatform.android ||
         platform == TargetPlatform.windows;
     var left = height -
-        (platform == TargetPlatform.android ? 0.0 : chooserHeight) -
         (showsUpdateRow && UpdateService.availableUpdate.value != null
             ? updateHeight
             : 0.0);
     final textTool = tool == DrawTool.text;
     if (textTool) left -= textRowHeight;
-    final inkRow = !textTool || left >= inkRowHeight;
+    final inkRow = !textTool;
     if (inkRow) left -= inkRowHeight;
     final strokeRow =
         toolWidths.containsKey(tool) && left >= strokeRowHeight + canvasFloor;
@@ -2414,16 +2407,16 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     // Below that the row keeps its slots and slides sideways instead.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tight = constraints.maxWidth / (tools.length + 1) < 40;
+        final tight = constraints.maxWidth / (tools.length + 1) < 34;
         Widget slot(Widget child) =>
-            tight ? SizedBox(width: 44, child: child) : Expanded(child: child);
+            tight ? SizedBox(width: 38, child: child) : Expanded(child: child);
         final toolbar = SizedBox(
           key: Key(
             Theme.of(context).platform == TargetPlatform.android
                 ? 'android-drawing-toolbar'
                 : 'drawing-toolbar',
           ),
-          height: 64,
+          height: 48,
           child: Material(
             elevation: 0,
             color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -2438,7 +2431,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                 style: IconButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 2,
-                    vertical: 8,
+                    vertical: 4,
                   ),
                 ),
               ),
@@ -2489,7 +2482,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
 
   Widget _toolbarIconFrame(Widget child, {bool selected = false}) {
     final scheme = Theme.of(context).colorScheme;
-    final requested = MediaQuery.sizeOf(context).width < 360 ? 40.0 : 48.0;
+    final requested = MediaQuery.sizeOf(context).width < 360 ? 32.0 : 36.0;
     // The chip only ever gets the room its slot can hand over, and a slot
     // that is narrower than the square asked for takes it out of the width
     // alone - seven of them across a phone left every chip 39.7 wide by 48
@@ -2574,7 +2567,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     Widget slot(Widget child) => Expanded(child: Center(child: child));
     return SizedBox(
       key: const Key('text-toolbar'),
-      height: 60,
+      height: 48,
       child: Material(
         elevation: 0,
         color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -3100,49 +3093,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
               final block = _bottomBlock(body.maxHeight);
               return Column(
                 children: [
-                  if (Theme.of(context).platform != TargetPlatform.android)
-                    SizedBox(
-                      height: 58,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        children: [
-                          for (final entry in [
-                            (DrawTool.text, 'Text'),
-                            (DrawTool.pencil, 'Pencil'),
-                            (DrawTool.pen, 'Pen'),
-                            (DrawTool.highlighter, 'Highlighter'),
-                            (DrawTool.eraser, 'Eraser'),
-                            (DrawTool.blur, 'Blur'),
-                          ])
-                            Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: ChoiceChip(
-                                label: Text(entry.$2),
-                                avatar: DrawingToolIcon(entry.$1, size: 18),
-                                selected: tool == entry.$1,
-                                onSelected: (_) => _selectTool(entry.$1),
-                              ),
-                            ),
-                          Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: PopupMenuButton<Color>(
-                              tooltip: 'Drawing colour',
-                              onSelected: _setActiveStrokeColor,
-                              itemBuilder: (_) =>
-                                  _colorMenuItems(_activeStrokeColor),
-                              child: Chip(
-                                avatar: Icon(
-                                  Icons.circle,
-                                  color: _activeStrokeColor,
-                                ),
-                                label: const Text('Colour'),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   if (showTasks && block.tasksHeight > 0)
                     ConstrainedBox(
                       constraints: BoxConstraints(maxHeight: block.tasksHeight),
@@ -3419,11 +3369,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                       top: false,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _textToolbar(),
-                          if (block.inkRow)
-                            _drawingToolbar(showStrokeRow: block.strokeRow),
-                        ],
+                        children: [_textToolbar()],
                       ),
                     )
                   else
