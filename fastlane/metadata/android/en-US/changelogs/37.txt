@@ -1,0 +1,1 @@
+Text is the tool you start in, and there is now a single, smaller toolbar row: the text row while you type, the ink row while you draw. Use Drawing tools to switch to the pens.

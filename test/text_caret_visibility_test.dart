@@ -46,8 +46,7 @@ Future<void> openPhoneEditor(
       ),
     ),
   );
-  await tester.pumpAndSettle();
-  await tester.tap(find.byTooltip('Text'));
+  // Text is the resting tool, so the document field is already live.
   await tester.pumpAndSettle();
 }
 
@@ -76,9 +75,11 @@ RenderEditable documentEditable(WidgetTester tester) {
 /// writer is looking at while typing, and the one the bottom menu can hide.
 Offset caretBottom(WidgetTester tester) {
   final editable = documentEditable(tester);
-  final controller = tester.widget<TextField>(
-    find.byKey(const ValueKey('canvas-text-field-0')),
-  ).controller!;
+  final controller = tester
+      .widget<TextField>(
+        find.byKey(const ValueKey('canvas-text-field-0')),
+      )
+      .controller!;
   final points = editable.getEndpointsForSelection(controller.selection);
   if (points.length != 1) {
     throw StateError('a typing caret is a single point, got ${points.length}');

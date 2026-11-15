@@ -116,13 +116,24 @@ NoteDirectoryProvider get unwritableFolder {
   return () async => throw const FileSystemException('No notes folder');
 }
 
-/// Drawing needs a tool in hand: with none selected the paper is dragged.
-Future<void> selectPen(WidgetTester tester) async {
-  final byTip = find.byTooltip('Pen');
-  final chip = find.widgetWithText(ChoiceChip, 'Pen');
-  await tester.tap(byTip.evaluate().isNotEmpty ? byTip : chip);
+/// Picks a tool from whichever single toolbar row is showing. Text is the
+/// resting tool and its row carries a "Drawing tools" button, which picks the
+/// pen and swaps the row for the ink tools.
+Future<void> chooseTool(WidgetTester tester, String name) async {
+  var button = find.byTooltip(name);
+  if (button.evaluate().isEmpty) {
+    if (name == 'Text') return;
+    await tester.tap(find.byTooltip('Drawing tools'));
+    await tester.pumpAndSettle();
+    if (name == 'Pen') return;
+    button = find.byTooltip(name);
+  }
+  await tester.tap(button);
   await tester.pumpAndSettle();
 }
+
+/// Drawing needs a tool in hand: with text active the paper is dragged.
+Future<void> selectPen(WidgetTester tester) => chooseTool(tester, 'Pen');
 
 /// Opens [note] in an editor wide enough to show its save button as a word.
 Future<void> pumpEditor(
@@ -320,7 +331,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Text'));
+    await chooseTool(tester, 'Text');
     await tester.pumpAndSettle();
     if (text.isNotEmpty) {
       await tester.enterText(
@@ -330,7 +341,7 @@ void main() {
       await tester.pumpAndSettle();
     }
     // Leave editing so the next tap has to be decided by the canvas.
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Pen'));
+    await chooseTool(tester, 'Pen');
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('text-toolbar')), findsNothing);
   }
@@ -485,7 +496,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Eraser'));
+    await chooseTool(tester, 'Eraser');
     await tester.pump();
     final canvas = find.byType(InteractiveViewer);
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(650, 350));
@@ -613,6 +624,8 @@ void main() {
         home: EditorPage(note: emptyNote()),
       ),
     );
+    await tester.pumpAndSettle();
+    await chooseTool(tester, 'Pen');
 
     expect(
       find.byKey(const ValueKey('drawing-tool-icon-text')),
@@ -640,7 +653,7 @@ void main() {
 
     final widthSlider = find.byKey(const Key('stroke-width-slider'));
     expect(tester.widget<Slider>(widthSlider).value, 3);
-    await tester.tap(find.byTooltip('Pencil'));
+    await chooseTool(tester, 'Pencil');
     await tester.pump();
     expect(tester.widget<Slider>(widthSlider).value, 2);
 
@@ -748,7 +761,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Highlighter'));
+    await chooseTool(tester, 'Highlighter');
     await tester.pump();
     final canvas = find.byType(InteractiveViewer);
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(150, 100));
@@ -778,7 +791,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Blur'));
+    await chooseTool(tester, 'Blur');
     await tester.pump();
     final canvas = find.byType(InteractiveViewer);
     final gesture = await tester.startGesture(
@@ -812,7 +825,8 @@ void main() {
         home: EditorPage(note: emptyNote()),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
+    await chooseTool(tester, 'Pen');
 
     expect(tester.takeException(), isNull);
     expect(find.byType(InteractiveViewer), findsOneWidget);
@@ -834,7 +848,7 @@ void main() {
     );
   });
 
-  testWidgets('both toolbars stay on screen at 320 pixels wide',
+  testWidgets('each toolbar row stays on screen at 320 pixels wide',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -845,16 +859,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Text'));
-    await tester.pump();
 
     final textToolbar = find.byKey(const Key('text-toolbar'));
     final drawingToolbar = find.byKey(const Key('android-drawing-toolbar'));
     expect(textToolbar, findsOneWidget);
-    expect(drawingToolbar, findsOneWidget);
+    expect(drawingToolbar, findsNothing, reason: 'one row of tools at a time');
     expect(tester.takeException(), isNull);
     expect(tester.getTopLeft(textToolbar).dx, greaterThanOrEqualTo(0));
     expect(tester.getTopRight(textToolbar).dx, lessThanOrEqualTo(320));
+
+    await chooseTool(tester, 'Pen');
+    expect(textToolbar, findsNothing);
+    expect(drawingToolbar, findsOneWidget);
     expect(tester.getTopRight(drawingToolbar).dx, lessThanOrEqualTo(320));
   });
 
@@ -1057,7 +1073,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Eraser'));
+    await chooseTool(tester, 'Eraser');
     await tester.pump();
     final canvas = find.byType(InteractiveViewer);
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(650, 350));
@@ -1100,7 +1116,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Eraser'));
+    await chooseTool(tester, 'Eraser');
     await tester.pump();
 
     final origin = tester.getTopLeft(find.byType(InteractiveViewer));
@@ -1135,7 +1151,7 @@ void main() {
     if (blank == null) throw StateError('Blank preview did not render');
     expect((await previewInk(tester, blank)).$1, 0);
 
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Text'));
+    await chooseTool(tester, 'Text');
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('canvas-text-field-0')),
@@ -1175,7 +1191,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byTooltip('Eraser'));
+    await chooseTool(tester, 'Eraser');
     await tester.pump();
     // Tap on the glyphs: the empty area below the line is paper now.
     await tester.tapAt(
@@ -1186,7 +1202,7 @@ void main() {
 
     expect(note.strokes, isEmpty);
     expect(find.byKey(const Key('text-toolbar')), findsOneWidget);
-    expect(find.byKey(const Key('android-drawing-toolbar')), findsOneWidget);
+    expect(find.byKey(const Key('android-drawing-toolbar')), findsNothing);
   });
 
   testWidgets('open-source repositories are disclosed in the app',
@@ -1234,7 +1250,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Text'));
+    await chooseTool(tester, 'Text');
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -1450,7 +1466,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Text'));
+    await chooseTool(tester, 'Text');
     await tester.pump();
     final field = tester.widget<TextField>(
       find.byKey(const ValueKey('canvas-text-field-0')),
@@ -1466,7 +1482,7 @@ void main() {
     expect(controller.styles.single.bold, isTrue);
   });
 
-  testWidgets('Windows always keeps an icon toolbar at the bottom',
+  testWidgets('Windows always keeps one icon toolbar at the bottom',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1476,15 +1492,11 @@ void main() {
         home: EditorPage(note: emptyNote()),
       ),
     );
+    await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('drawing-toolbar')), findsOneWidget);
-    expect(find.byTooltip('Eraser'), findsWidgets);
-    expect(find.byTooltip('Select'), findsNothing);
-    expect(find.byKey(const Key('text-toolbar')), findsNothing);
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Text'));
-    await tester.pump();
     expect(find.byKey(const Key('text-toolbar')), findsOneWidget);
-    expect(find.byKey(const Key('drawing-toolbar')), findsOneWidget);
+    expect(find.byKey(const Key('drawing-toolbar')), findsNothing);
+    expect(find.byTooltip('Select'), findsNothing);
     expect(find.byTooltip('Add text block'), findsNothing);
     expect(find.byTooltip('Lists'), findsOneWidget);
     expect(find.byTooltip('Text colour'), findsOneWidget);
@@ -1495,12 +1507,13 @@ void main() {
       ),
       findsNothing,
     );
-    expect(
-      tester.getTopLeft(find.byKey(const Key('text-toolbar'))).dy,
-      lessThan(
-        tester.getTopLeft(find.byKey(const Key('drawing-toolbar'))).dy,
-      ),
-    );
+
+    await chooseTool(tester, 'Eraser');
+    expect(find.byKey(const Key('drawing-toolbar')), findsOneWidget);
+    expect(find.byKey(const Key('text-toolbar')), findsNothing);
+    expect(find.byTooltip('Eraser'), findsWidgets);
+    await chooseTool(tester, 'Text');
+    expect(find.byKey(const Key('text-toolbar')), findsOneWidget);
 
     expect(find.byKey(const ValueKey('canvas-text-block-0')), findsOneWidget);
     expect(
@@ -1521,20 +1534,12 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const Key('android-drawing-toolbar')), findsOneWidget);
-    await tester.tap(find.byTooltip('Text'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('text-toolbar')), findsOneWidget);
-    expect(find.byKey(const Key('android-drawing-toolbar')), findsOneWidget);
+    expect(find.byKey(const Key('android-drawing-toolbar')), findsNothing);
     expect(
       tester.getCenter(find.byKey(const Key('text-toolbar'))).dy,
-      greaterThan(700),
-    );
-    expect(
-      tester.getTopLeft(find.byKey(const Key('text-toolbar'))).dy,
-      lessThan(
-        tester.getTopLeft(find.byKey(const Key('android-drawing-toolbar'))).dy,
-      ),
+      greaterThan(740),
     );
     await tester.tap(find.byTooltip('Font size'));
     await tester.pumpAndSettle();
@@ -1557,7 +1562,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Text'));
+    await chooseTool(tester, 'Text');
     await tester.pump();
     final finder = find.byKey(const ValueKey('canvas-text-field-0'));
     final field = tester.widget<TextField>(finder);
@@ -1604,7 +1609,7 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Update'), findsOneWidget);
     expect(
       tester.getCenter(find.byKey(const Key('available-update-row'))).dy,
-      lessThan(tester.getCenter(find.byKey(const Key('drawing-toolbar'))).dy),
+      lessThan(tester.getCenter(find.byKey(const Key('text-toolbar'))).dy),
     );
 
     void expectUpdateTextContrast() {
@@ -1683,7 +1688,7 @@ void main() {
   testWidgets('tapping blank canvas in text mode puts the caret at the end',
       (tester) async {
     await openNoteWithText(tester, 'Hello');
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Text'));
+    await chooseTool(tester, 'Text');
     await tester.pumpAndSettle();
 
     // Well below the document's own single line, outside its field.

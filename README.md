@@ -27,11 +27,11 @@ All versions and release notes are on the [releases page](https://github.com/hyy
 **Type**
 - One typed document per note, laid out in a column at the top of the page. It grows downward and adds pages as you write.
 - Bold, colour, size and indentation apply to the selection or to the document default. Checklists are lists inside the text.
-- Press a letter to start editing in place; the text toolbar appears.
+- Press a letter to start editing in place. The toolbar is always a single compact row: the text row while you type, the ink row while you draw.
 
 **Move around the page**
 - The page is as wide as your screen. There is nothing to scroll sideways, and the top edge is a firm stop. A drawing made on a wider screen keeps its width, and you pan sideways to reach it.
-- Nothing draws until you pick a drawing tool. With none selected, press blank paper and drag to move the page; press a letter to open the inline editor. Pick Pencil, Pen, Highlighter, Eraser or Blur to draw with a finger, stylus or mouse, and pick the same tool again to put it down. Two fingers pan and zoom in any tool, and so does the mouse wheel. Pinch to zoom from 1× to 5×.
+- Text is the tool you start in. Press a letter to edit in place, press blank paper and drag to move the page, and tap blank paper to put the caret at the end. Nothing draws until you choose a drawing tool: use **Drawing tools** on the text row to switch to a single row with Pencil, Pen, Highlighter, Eraser and Blur, which draw with a finger, stylus or mouse. Choose the active tool again to go back to text. Two fingers pan and zoom in any tool, and so does the mouse wheel. Pinch to zoom from 1× to 5×.
 - Scrolling to the bottom adds one page. Zooming and scrolling up never do. The page count is saved with the note, and the current page shows in a fixed chip at the top-left of the view.
 
 **Organise**
