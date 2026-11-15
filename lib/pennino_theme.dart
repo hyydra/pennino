@@ -51,7 +51,7 @@ ThemeData buildPenninoTheme() => ThemeData(
       // neighbouring surface tones and a hairline, not from drop shadows.
       appBarTheme: const AppBarTheme(
         backgroundColor: PenninoColors.base,
-        foregroundColor: PenninoColors.accentSoft,
+        foregroundColor: PenninoColors.ink,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         elevation: 0,
@@ -81,7 +81,7 @@ ThemeData buildPenninoTheme() => ThemeData(
       chipTheme: ChipThemeData(
         backgroundColor: PenninoColors.raised,
         selectedColor: PenninoColors.accentContainer,
-        checkmarkColor: PenninoColors.accentSoft,
+        checkmarkColor: PenninoColors.ink,
         side: const BorderSide(color: PenninoColors.hairline),
         shape: const StadiumBorder(),
         labelStyle: const TextStyle(color: PenninoColors.ink),
@@ -121,6 +121,18 @@ ThemeData buildPenninoTheme() => ThemeData(
           borderRadius: BorderRadius.circular(12),
         ),
       ),
+      // A tick is the one control that says "done", so it stays neutral
+      // rather than borrowing the accent: white box, dark check.
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? PenninoColors.ink
+              : Colors.transparent,
+        ),
+        checkColor: const WidgetStatePropertyAll(PenninoColors.base),
+        side: const BorderSide(color: PenninoColors.steel, width: 1.6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: PenninoColors.inset,
@@ -142,7 +154,7 @@ ThemeData buildPenninoTheme() => ThemeData(
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: PenninoColors.accentSoft,
+          foregroundColor: PenninoColors.ink,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),

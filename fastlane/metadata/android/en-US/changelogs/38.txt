@@ -1,0 +1,1 @@
+Pressing Enter in a checklist, bullet or numbered list starts the next item, and Enter on an empty item ends it. Checklist ticks follow the text colour and size and are never blue, the top bar is white instead of blue, and the top-left button that opens your notes is now a house icon.

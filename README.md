@@ -26,7 +26,7 @@ All versions and release notes are on the [releases page](https://github.com/hyy
 
 **Type**
 - One typed document per note, laid out in a column at the top of the page. It grows downward and adds pages as you write.
-- Bold, colour, size and indentation apply to the selection or to the document default. Checklists are lists inside the text.
+- Bold, colour, size and indentation apply to the selection or to the document default. Checklists, bullets and numbered lists are paragraphs inside the text: Enter in a list starts the next item, and Enter on an empty item ends the list. Checklist ticks are drawn in the text's own colour and size, never blue.
 - Press a letter to start editing in place. The toolbar is always a single compact row: the text row while you type, the ink row while you draw.
 
 **Move around the page**
@@ -35,7 +35,7 @@ All versions and release notes are on the [releases page](https://github.com/hyy
 - Scrolling to the bottom adds one page. Zooming and scrolling up never do. The page count is saved with the note, and the current page shows in a fixed chip at the top-left of the view.
 
 **Organise**
-- A library of local notes, plus the launcher canvas that opens first.
+- A library of local notes, opened with the house button at the top left, plus the launcher canvas that opens first.
 - Per-note background (white, cream, blue, green, red or dark) and paper pattern (plain, lined, grid or dotted).
 
 **Keep it safe**

@@ -13,6 +13,7 @@ import 'package:uuid/uuid.dart';
 
 import 'app_version.dart';
 import 'autosave_controller.dart';
+import 'list_continuation.dart';
 import 'canvas_editing.dart';
 import 'canvas_painter.dart';
 import 'drive_sync_service.dart';
@@ -2751,6 +2752,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
           minLines: 1,
           maxLines: null,
           keyboardType: TextInputType.multiline,
+          inputFormatters: const [ListContinuationFormatter()],
           textAlignVertical: TextAlignVertical.top,
           style: _documentStyle,
           decoration: const InputDecoration(
@@ -2948,7 +2950,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                               builder: (_) => const LibraryPage()),
                         );
                     },
-                    icon: const Icon(Icons.library_books_outlined),
+                    icon: const Icon(Icons.home_outlined),
                   )
                 : null,
             title: TextField(

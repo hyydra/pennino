@@ -107,14 +107,68 @@ class RichTextEditingController extends TextEditingController {
     return endAffinity ? prefix + insertedLength : prefix;
   }
 
+  /// A checklist mark is a ballot-box character in the text, and a font may
+  /// paint it as a coloured emoji - the blue tick that ignored the text style.
+  /// While the field is being edited the mark is drawn as an icon in the
+  /// text's own colour and size instead. It stands in for exactly one
+  /// character, so offsets and the caret do not move. Layout done off screen
+  /// (`withComposing: false`) keeps the plain characters.
+  bool _isTickAt(int index) =>
+      (text[index] == '\u2610' || text[index] == '\u2611') &&
+      index + 1 < text.length &&
+      text[index + 1] == ' ' &&
+      (index == 0 || text[index - 1] == '\n');
+
+  List<InlineSpan> _spansFor(
+    int start,
+    int end,
+    TextStyle? style,
+    bool inlineTicks,
+  ) {
+    if (!inlineTicks) {
+      return [TextSpan(text: text.substring(start, end), style: style)];
+    }
+    final spans = <InlineSpan>[];
+    var plainStart = start;
+    for (var index = start; index < end; index++) {
+      if (!_isTickAt(index)) continue;
+      if (index > plainStart) {
+        spans.add(TextSpan(
+          text: text.substring(plainStart, index),
+          style: style,
+        ));
+      }
+      final size = (style?.fontSize ?? 14) * 1.15;
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Icon(
+          text[index] == '\u2611'
+              ? Icons.check_box_outlined
+              : Icons.check_box_outline_blank,
+          size: size,
+          color: style?.color,
+        ),
+      ));
+      plainStart = index + 1;
+    }
+    if (plainStart < end) {
+      spans.add(TextSpan(text: text.substring(plainStart, end), style: style));
+    }
+    return spans;
+  }
+
   @override
   TextSpan buildTextSpan({
     required BuildContext context,
     TextStyle? style,
     required bool withComposing,
   }) {
-    if (text.isEmpty || styles.isEmpty) {
-      return TextSpan(style: style, text: text);
+    if (text.isEmpty) return TextSpan(style: style, text: text);
+    if (styles.isEmpty) {
+      return TextSpan(
+        style: style,
+        children: _spansFor(0, text.length, style, withComposing),
+      );
     }
     final boundaries = <int>{0, text.length};
     for (final range in styles) {
@@ -141,10 +195,7 @@ class RichTextEditingController extends TextEditingController {
           fontSize: range.fontSize,
         );
       }
-      children.add(TextSpan(
-        text: text.substring(start, end),
-        style: segmentStyle,
-      ));
+      children.addAll(_spansFor(start, end, segmentStyle, withComposing));
     }
     return TextSpan(style: style, children: children);
   }

@@ -109,4 +109,52 @@ void main() {
     expect(children[3].style!.color, isNull);
     expect(children.last.style!.fontSize, 26);
   });
+
+  testWidgets('checklist marks are icons in the live editor and text elsewhere',
+      (tester) async {
+    final controller = RichTextEditingController(
+      text: '☐ milk\n☑ eggs\nplain ☐ not a mark',
+      styles: <TextStyleRange>[],
+    );
+    addTearDown(controller.dispose);
+    late BuildContext context;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(builder: (c) {
+        context = c;
+        return const SizedBox();
+      }),
+    ));
+    const style = TextStyle(color: Color(0xffd0d0d0), fontSize: 20);
+
+    final live = controller.buildTextSpan(
+      context: context,
+      style: style,
+      withComposing: true,
+    );
+    final widgets = <WidgetSpan>[];
+    live.visitChildren((span) {
+      if (span is WidgetSpan) widgets.add(span);
+      return true;
+    });
+    expect(widgets, hasLength(2),
+        reason: 'only a mark at the line start counts');
+    final icon = widgets.first.child as Icon;
+    expect(icon.color, style.color, reason: 'a tick takes the text colour');
+    // A widget stands in for exactly one character, so offsets do not move.
+    expect(live.toPlainText(includePlaceholders: true).length,
+        controller.text.length);
+
+    final offscreen = controller.buildTextSpan(
+      context: context,
+      style: style,
+      withComposing: false,
+    );
+    var hasWidget = false;
+    offscreen.visitChildren((span) {
+      if (span is WidgetSpan) hasWidget = true;
+      return true;
+    });
+    expect(hasWidget, isFalse, reason: 'off-screen layout keeps the text');
+    expect(offscreen.toPlainText(), controller.text);
+  });
 }
