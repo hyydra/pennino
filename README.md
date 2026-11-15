@@ -26,7 +26,7 @@ All versions and release notes are on the [releases page](https://github.com/hyy
 
 **Type**
 - One typed document per note, laid out in a column at the top of the page. It grows downward and adds pages as you write.
-- Bold, colour, size and indentation apply to the selection or to the document default. Checklists, bullets and numbered lists are paragraphs inside the text: Enter in a list starts the next item, and Enter on an empty item ends the list. Ticks are neutral white, not blue.
+- Bold, colour, size and indentation apply to the selection or to the document default. Checklists, bullets and numbered lists are paragraphs inside the text: Enter in a list starts the next item, and Enter on an empty item ends the list. Checklist ticks are drawn in the text's own colour and size, never blue.
 - Press a letter to start editing in place. The toolbar is always a single compact row: the text row while you type, the ink row while you draw.
 
 **Move around the page**

@@ -51,7 +51,7 @@ ThemeData buildPenninoTheme() => ThemeData(
       // neighbouring surface tones and a hairline, not from drop shadows.
       appBarTheme: const AppBarTheme(
         backgroundColor: PenninoColors.base,
-        foregroundColor: PenninoColors.accentSoft,
+        foregroundColor: PenninoColors.ink,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         elevation: 0,
@@ -154,7 +154,7 @@ ThemeData buildPenninoTheme() => ThemeData(
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: PenninoColors.accentSoft,
+          foregroundColor: PenninoColors.ink,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
