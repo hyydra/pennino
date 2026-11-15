@@ -1187,6 +1187,36 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     return false;
   }
 
+  /// Whether a press lands on the document's text.
+  ///
+  /// The live field is the geometry the writer sees, so it decides when it is
+  /// on screen: the app's own `TextPainter` lays out shorter lines and breaks
+  /// them in other places, which made a press on a visible letter miss further
+  /// down the page. A fingertip is wider than a glyph, so the boxes get a
+  /// margin. The painter's layout is only the fallback while the field is not
+  /// built.
+  bool _pointHitsDocument(Offset viewportPoint, Offset textLocal) {
+    final editable = _documentEditable();
+    final clip = canvasClipKey.currentContext?.findRenderObject();
+    if (editable == null ||
+        !editable.attached ||
+        clip is! RenderBox ||
+        !clip.attached ||
+        textController.text.isEmpty) {
+      return _pointHitsDocumentLine(textLocal);
+    }
+    final local = editable.globalToLocal(clip.localToGlobal(viewportPoint));
+    final boxes = editable.getBoxesForSelection(
+      TextSelection(baseOffset: 0, extentOffset: textController.text.length),
+    );
+    return boxes.any(
+      (box) => box.toRect().inflate(_documentHitSlop).contains(local),
+    );
+  }
+
+  /// How far outside a glyph's box a press still counts as on the text.
+  static const double _documentHitSlop = 4;
+
   /// The point in the document's own text coordinates, or null when the text
   /// layer is hidden.
   Offset? _documentTextLocal(Offset viewportPoint) {
@@ -1204,7 +1234,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     final textLocal = _documentTextLocal(viewportPoint);
     // An empty document lays out no lines, so a blank page stays paper for
     // every tool - the v0.4.20 empty-block exception went with the boxes.
-    if (textLocal == null || !_pointHitsDocumentLine(textLocal)) return false;
+    if (textLocal == null || !_pointHitsDocument(viewportPoint, textLocal)) {
+      return false;
+    }
     // The field only takes pointers in text mode, so a drawing-tool tap that
     // activates it has to place the caret where the tap landed.
     final fieldOwnedPointer = tool == DrawTool.text;
