@@ -2,10 +2,10 @@
 
 ## Current state
 
-- Latest published release: v0.4.29, with verified Android APK and Windows installer.
+- Latest published release: v0.4.32, with verified Android APK and Windows installer. v0.4.30 and v0.4.31 are recorded in [BUILDS.md](./BUILDS.md) only, with no handoff note of their own.
 - Every build that goes up is written down in [BUILDS.md](./BUILDS.md), newest first, with the digests recomputed from the downloaded bytes; the ledger starts with v0.4.27.
-- Repository baseline: `main` after PR #70 (`aae50ed`). The whole-repo review fixes, PRs #36-#46, are merged, and so is PR #47 (CI platform coverage); its workflow patches are deliberately checked in as files under `docs/patches/` because this credential cannot push to `.github/workflows/`.
-- Release commit: `aae50ed` (`v0.4.29`, PR #70); the previous release was `5d752ac` (`v0.4.28`).
+- Repository baseline: `main` after PR #75 (`46b6939`, v0.4.32). The previous baseline was `main` after PR #70 (`aae50ed`). The whole-repo review fixes, PRs #36-#46, are merged, and so is PR #47 (CI platform coverage); its workflow patches are deliberately checked in as files under `docs/patches/` because this credential cannot push to `.github/workflows/`.
+- Release commit: `46b6939` (`v0.4.32`, PR #75); the previous releases were `98f9fcf` (`v0.4.31`), `1a6bde6` (`v0.4.30`) and `aae50ed` (`v0.4.29`).
 - Raster drawing migration, editor controls and tiled raster storage are included in the published v0.4.18 release.
 - Sync and save fixes (UTC timestamps, changed-notes-only upload, save before suspend or update) merged through PR #25 (`7aa0a54`) shipped in v0.4.19 and are still live in v0.4.20. The earlier `v0.4.18` tag was re-created at `7cf2ee6` after the post-merge workflow passed, which is why the previous notes here said the tag had been removed.
 - Glyph-precise text activation (a text block opens only when the tap lands on its text; the rest of the block draws) merged through PR #28 (`010b2b5`) shipped in v0.4.20.
