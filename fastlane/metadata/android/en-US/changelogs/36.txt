@@ -1,0 +1,1 @@
+Pressing on text now opens the inline editor from any visible line, not just the first few.
