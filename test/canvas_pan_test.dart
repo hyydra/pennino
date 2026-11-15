@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pennino/main.dart';
 import 'package:pennino/note_data.dart';
@@ -172,6 +173,68 @@ void main() {
       findsOneWidget,
       reason: 'the text toolbar is the sign the editor is on',
     );
+  });
+
+  testWidgets('every visible line of a long note opens the editor when pressed',
+      (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 900);
+    final note = Note(
+      id: 'long-note',
+      title: 'Long',
+      updated: DateTime.utc(2026, 11, 15),
+      text: List.generate(
+        12,
+        (i) => 'Line number $i of the note, long enough to wrap onto more rows',
+      ).join('\n'),
+      strokes: [],
+      pageCount: 3,
+    );
+    Widget app() => MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.android),
+          home: EditorPage(note: note),
+        );
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+
+    RenderEditable? editable;
+    void visit(RenderObject node) {
+      if (editable == null && node is RenderEditable) editable = node;
+      node.visitChildren(visit);
+    }
+
+    visit(tester.renderObject(find.byType(EditableText).first));
+    final field = editable!;
+    final boxes = field.getBoxesForSelection(
+      TextSelection(baseOffset: 0, extentOffset: field.plainText.length),
+    );
+    final centres = <Offset>[];
+    var lastTop = -1.0;
+    for (final box in boxes) {
+      if ((box.top - lastTop).abs() <= 1) continue;
+      lastTop = box.top;
+      final centre = field.localToGlobal(box.toRect().center);
+      if (centre.dy < 800) centres.add(centre);
+    }
+    expect(centres.length, greaterThan(10));
+
+    final missed = <int>[];
+    for (var i = 0; i < centres.length; i++) {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(centres[i]);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      if (find.byKey(const Key('text-toolbar')).evaluate().isEmpty) {
+        missed.add(i);
+      }
+    }
+    expect(missed, isEmpty, reason: 'a visible line did not take the press');
   });
 
   testWidgets('a press on blank paper drags it until a drawing tool is picked',
