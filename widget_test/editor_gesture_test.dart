@@ -684,6 +684,44 @@ void main() {
     expect(find.byKey(const ValueKey('canvas-text-block-0')), findsOneWidget);
   });
 
+  testWidgets('legacy strokes right of a narrow view survive migration',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final note = Note(
+      id: 'legacy-wide-note',
+      title: 'Legacy wide note',
+      text: '',
+      updated: DateTime.utc(2026, 11, 15),
+      strokes: [
+        Stroke(
+          points: const [CanvasPoint(1500, 140), CanvasPoint(1700, 140)],
+          color: 0xff000000,
+          width: 4,
+          highlight: false,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.windows),
+        home: EditorPage(note: note),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(note.strokes, isEmpty);
+    expect(
+      note.rasterWidth,
+      greaterThanOrEqualTo(1700),
+      reason: 'the migrated paper has to reach the strokes it replaced',
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('canvas-layer-stack'))).width,
+      greaterThanOrEqualTo(1700),
+    );
+  });
+
   testWidgets('the highlighter starts in yellow', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));

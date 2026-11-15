@@ -68,6 +68,51 @@ void main() {
     );
   });
 
+  testWidgets('a drawing wider than the view keeps its width and pans sideways',
+      (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(500, 900);
+    final note = Note(
+      id: 'wide-raster-note',
+      title: 'Wide',
+      updated: DateTime.utc(2026, 11, 15),
+      text: '',
+      strokes: [],
+      pageCount: 3,
+      rasterWidth: 1400,
+      rasterPageHeight: 1200,
+    );
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(platform: TargetPlatform.android),
+      home: EditorPage(note: note),
+    ));
+    await tester.pumpAndSettle();
+    await pickTool(tester, 'Hand');
+
+    expect(
+      tester.getSize(paperStack).width,
+      1400,
+      reason: 'ink drawn on a wider screen must not be cut off by this one',
+    );
+    final before = paperTopLeft(tester);
+    final gesture = await tester.startGesture(before + const Offset(300, 200));
+    await gesture.moveBy(const Offset(-300, 0));
+    await tester.pump();
+    final during = paperTopLeft(tester);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      during - before,
+      const Offset(-300, 0),
+      reason: 'the far side of a wide drawing is reached by panning',
+    );
+  });
+
   testWidgets('the paper cannot be pulled past its top edge', (tester) async {
     await openEditor(tester);
     await pickTool(tester, 'Hand');

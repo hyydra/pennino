@@ -1,108 +1,168 @@
 import 'package:flutter/material.dart';
 
 abstract final class PenninoColors {
-  static const leather = Color(0xff15191d);
-  static const leatherRaised = Color(0xff20262b);
-  static const leatherInset = Color(0xff0d1013);
-  static const gold = Color(0xffd7a842);
-  static const paleGold = Color(0xfff0d38a);
-  static const steel = Color(0xffaeb5bc);
-  static const ink = Color(0xfff5f0e5);
+  static const base = Color(0xff0b0c0e);
+  static const raised = Color(0xff16181c);
+  static const inset = Color(0xff060708);
+  static const accent = Color(0xff4d8dff);
+  static const accentSoft = Color(0xffa8c8ff);
+  static const accentContainer = Color(0xff16336b);
+  static const steel = Color(0xffb4bbc6);
+  static const ink = Color(0xfff5f7fa);
+  static const hairline = Color(0xff2f343b);
 }
 
 ThemeData buildPenninoTheme() => ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: const ColorScheme.dark(
-        primary: PenninoColors.gold,
-        onPrimary: PenninoColors.leatherInset,
-        primaryContainer: Color(0xff5b461c),
-        onPrimaryContainer: PenninoColors.paleGold,
+        primary: PenninoColors.accent,
+        onPrimary: PenninoColors.inset,
+        primaryContainer: PenninoColors.accentContainer,
+        onPrimaryContainer: PenninoColors.accentSoft,
         secondary: PenninoColors.steel,
-        onSecondary: PenninoColors.leatherInset,
+        onSecondary: PenninoColors.inset,
         // A container role the scheme leaves out comes back as the base
         // colour beside it, so the update row - which asks for
         // `secondaryContainer` - was painting in the light steel of
-        // `secondary`. This is the same dark tone the leather surfaces use,
+        // `secondary`. This is the same dark tone the surfaces use,
         // tinted the way `secondary` is.
-        secondaryContainer: Color(0xff39424a),
+        secondaryContainer: Color(0xff2b3038),
         onSecondaryContainer: PenninoColors.ink,
-        surface: PenninoColors.leather,
+        surface: PenninoColors.base,
         onSurface: PenninoColors.ink,
-        surfaceContainerLowest: PenninoColors.leatherInset,
-        surfaceContainerLow: Color(0xff191e22),
-        surfaceContainer: PenninoColors.leatherRaised,
-        surfaceContainerHigh: Color(0xff2a3035),
-        outline: Color(0xff6d675d),
-        outlineVariant: Color(0xff3f4346),
+        surfaceContainerLowest: PenninoColors.inset,
+        surfaceContainerLow: Color(0xff111317),
+        surfaceContainer: PenninoColors.raised,
+        surfaceContainerHigh: Color(0xff22262c),
+        outline: Color(0xff8b93a1),
+        outlineVariant: Color(0xff2f343b),
       ),
-      scaffoldBackgroundColor: PenninoColors.leather,
-      dividerColor: const Color(0xff4a443b),
+      scaffoldBackgroundColor: PenninoColors.base,
+      dividerColor: PenninoColors.hairline,
+      dividerTheme: const DividerThemeData(
+        color: PenninoColors.hairline,
+        thickness: 1,
+        space: 1,
+      ),
+      splashFactory: InkSparkle.splashFactory,
+      textTheme: _textTheme,
+      // Flat, tonal surfaces: depth comes from the step between two
+      // neighbouring surface tones and a hairline, not from drop shadows.
       appBarTheme: const AppBarTheme(
-        backgroundColor: PenninoColors.leatherRaised,
-        foregroundColor: PenninoColors.paleGold,
+        backgroundColor: PenninoColors.base,
+        foregroundColor: PenninoColors.accentSoft,
         surfaceTintColor: Colors.transparent,
-        shadowColor: Colors.black,
-        elevation: 5,
+        scrolledUnderElevation: 0,
+        elevation: 0,
+        centerTitle: false,
         titleTextStyle: TextStyle(
           color: PenninoColors.ink,
-          fontSize: 21,
+          fontSize: 22,
           fontWeight: FontWeight.w600,
-          letterSpacing: .2,
+          letterSpacing: -.2,
         ),
       ),
       cardTheme: CardThemeData(
-        color: PenninoColors.leatherRaised,
+        color: PenninoColors.raised,
         surfaceTintColor: Colors.transparent,
-        elevation: 3,
-        shadowColor: Colors.black,
+        elevation: 0,
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: Color(0xff4b4740)),
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: PenninoColors.hairline),
         ),
+      ),
+      listTileTheme: const ListTileThemeData(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        iconColor: PenninoColors.steel,
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: PenninoColors.leatherRaised,
-        selectedColor: const Color(0xff5b461c),
-        checkmarkColor: PenninoColors.paleGold,
-        side: const BorderSide(color: Color(0xff575149)),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
-        ),
+        backgroundColor: PenninoColors.raised,
+        selectedColor: PenninoColors.accentContainer,
+        checkmarkColor: PenninoColors.accentSoft,
+        side: const BorderSide(color: PenninoColors.hairline),
+        shape: const StadiumBorder(),
         labelStyle: const TextStyle(color: PenninoColors.ink),
       ),
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: PenninoColors.gold,
-        foregroundColor: PenninoColors.leatherInset,
-        elevation: 6,
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: PenninoColors.accent,
+        foregroundColor: PenninoColors.inset,
+        elevation: 2,
+        highlightElevation: 3,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: PenninoColors.leatherRaised,
+        color: PenninoColors.raised,
         surfaceTintColor: Colors.transparent,
-        elevation: 8,
+        elevation: 3,
+        shadowColor: Colors.black54,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: Color(0xff5a544b)),
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: PenninoColors.hairline),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: PenninoColors.raised,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: PenninoColors.hairline),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xff22262c),
+        contentTextStyle: const TextStyle(color: PenninoColors.ink),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: PenninoColors.leatherInset,
+        fillColor: PenninoColors.inset,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
-          borderSide: const BorderSide(color: Color(0xff5a544b)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: PenninoColors.hairline),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: PenninoColors.hairline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(
-            color: PenninoColors.gold,
+            color: PenninoColors.accent,
             width: 1.4,
           ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: PenninoColors.paleGold,
+          foregroundColor: PenninoColors.accentSoft,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
     );
+
+/// Tighter headings and a slightly roomier body than the Material defaults,
+/// on the platform's own font so nothing has to be bundled.
+const _textTheme = TextTheme(
+  titleLarge: TextStyle(fontWeight: FontWeight.w600, letterSpacing: -.2),
+  titleMedium: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0),
+  bodyMedium: TextStyle(height: 1.35),
+  bodySmall: TextStyle(height: 1.3, color: PenninoColors.steel),
+  labelLarge: TextStyle(fontWeight: FontWeight.w600, letterSpacing: .1),
+);

@@ -26,14 +26,14 @@ class DrawingToolIcon extends StatelessWidget {
       return CustomPaint(
         key: const ValueKey('drawing-tool-icon-text'),
         size: Size.square(size),
-        painter: TextToolIconPainter(color),
+        painter: _TextToolIconPainter(color),
       );
     }
     if (tool == DrawTool.eraser) {
       return CustomPaint(
         key: const ValueKey('drawing-tool-icon-eraser'),
         size: Size.square(size),
-        painter: EraserToolIconPainter(
+        painter: _EraserToolIconPainter(
           color,
           Theme.of(context).colorScheme.primary,
         ),
@@ -53,10 +53,10 @@ class DrawingToolIcon extends StatelessWidget {
       };
 }
 
-class TextToolIconPainter extends CustomPainter {
+class _TextToolIconPainter extends CustomPainter {
   final Color color;
 
-  const TextToolIconPainter(this.color);
+  const _TextToolIconPainter(this.color);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -77,7 +77,7 @@ class TextToolIconPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant TextToolIconPainter oldDelegate) =>
+  bool shouldRepaint(covariant _TextToolIconPainter oldDelegate) =>
       color != oldDelegate.color;
 }
 
@@ -91,15 +91,15 @@ class FontSizeMarkIcon extends StatelessWidget {
     return CustomPaint(
       key: key,
       size: const Size.square(24),
-      painter: FontSizeMarkIconPainter(color),
+      painter: _FontSizeMarkIconPainter(color),
     );
   }
 }
 
-class FontSizeMarkIconPainter extends CustomPainter {
+class _FontSizeMarkIconPainter extends CustomPainter {
   final Color color;
 
-  const FontSizeMarkIconPainter(this.color);
+  const _FontSizeMarkIconPainter(this.color);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -130,15 +130,15 @@ class FontSizeMarkIconPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant FontSizeMarkIconPainter oldDelegate) =>
+  bool shouldRepaint(covariant _FontSizeMarkIconPainter oldDelegate) =>
       color != oldDelegate.color;
 }
 
-class EraserToolIconPainter extends CustomPainter {
+class _EraserToolIconPainter extends CustomPainter {
   final Color color;
   final Color accentColor;
 
-  const EraserToolIconPainter(this.color, this.accentColor);
+  const _EraserToolIconPainter(this.color, this.accentColor);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -183,6 +183,6 @@ class EraserToolIconPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant EraserToolIconPainter oldDelegate) =>
+  bool shouldRepaint(covariant _EraserToolIconPainter oldDelegate) =>
       color != oldDelegate.color || accentColor != oldDelegate.accentColor;
 }

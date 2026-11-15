@@ -174,6 +174,20 @@ class NoteLoadFailure extends StatelessWidget {
       );
 }
 
+/// "Today 14:32", "Yesterday 09:05", or the date for anything older.
+String _updatedLabel(DateTime updated) {
+  final local = updated.toLocal();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(local.year, local.month, local.day);
+  String two(int v) => v.toString().padLeft(2, '0');
+  final time = '${two(local.hour)}:${two(local.minute)}';
+  final days = today.difference(day).inDays;
+  if (days == 0) return 'Today $time';
+  if (days == 1) return 'Yesterday $time';
+  return '${local.year}-${two(local.month)}-${two(local.day)}';
+}
+
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key, this.directoryProvider});
 
@@ -313,10 +327,16 @@ class _LibraryPageState extends State<LibraryPage> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.draw_outlined,
-                                size: 64, color: Colors.grey),
-                            SizedBox(height: 12),
-                            Text('Start your first handwritten note'),
+                            Icon(
+                              Icons.draw_outlined,
+                              size: 64,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Start your first handwritten note',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
                           ],
                         ),
                       )
@@ -327,17 +347,19 @@ class _LibraryPageState extends State<LibraryPage> {
   /// over notes that are still on disk invites the user to write on top of
   /// them. The retry is offered because the usual causes are fixable.
   Widget _noteList() => ListView.builder(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
         itemCount: notes.length,
         itemBuilder: (context, i) {
           final n = notes[i];
           return Card(
             child: ListTile(
               leading: const Icon(Icons.note_alt_outlined),
-              title: Text(n.title),
-              subtitle: Text(
-                '${n.strokes.length} strokes • ${n.updated.toLocal()}',
+              title: Text(
+                n.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
+              subtitle: Text(_updatedLabel(n.updated)),
               onTap: () => openNote(n),
               trailing: PopupMenuButton<String>(
                 onSelected: (v) async {
@@ -741,7 +763,19 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   Future<void> _migrateLegacyStrokes() async {
     final source = rasterDrawing;
     final legacyStrokes = List<Stroke>.of(widget.note.strokes);
-    final migrationWidth = canvasWidth.ceil();
+    // Legacy strokes were drawn on a canvas at least 2000px wide, so the
+    // paper they are baked into has to reach the furthest one; a paper only as
+    // wide as this screen would drop them and the removeRange below would
+    // delete them for good.
+    var migrationWidth = canvasWidth.ceil();
+    for (final stroke in legacyStrokes) {
+      for (final point in stroke.points) {
+        migrationWidth = math.max(
+          migrationWidth,
+          (point.x + stroke.width / 2 + 1).ceil(),
+        );
+      }
+    }
     final migrationPageHeight = canvasPageHeight.ceil();
     final migrationPageCount = widget.note.pageCount;
     final encodedTiles = await source.encode();
@@ -1545,10 +1579,10 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                 child: DecoratedBox(
                   key: const Key('page-indicator'),
                   decoration: BoxDecoration(
-                    color: PenninoColors.leatherInset,
+                    color: PenninoColors.inset,
                     borderRadius: const BorderRadius.all(Radius.circular(5)),
                     border: Border.fromBorderSide(
-                      BorderSide(color: PenninoColors.gold),
+                      BorderSide(color: PenninoColors.accent),
                     ),
                   ),
                   child: Padding(
@@ -1559,7 +1593,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                     child: Text(
                       '${page + 1}/${widget.note.pageCount}',
                       style: const TextStyle(
-                        color: PenninoColors.paleGold,
+                        color: PenninoColors.accentSoft,
                         fontSize: 12,
                       ),
                     ),
@@ -2345,7 +2379,12 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
           ),
           height: 64,
           child: Material(
-            elevation: 6,
+            elevation: 0,
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            shape: Border(
+              top: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant),
+            ),
             // The button's own padding came off the chip's width, so the
             // row was spending it on a gap the slot already provided.
             child: IconButtonTheme(
@@ -2368,7 +2407,10 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                             : null,
                       ),
                       onPressed: () => _selectTool(entry.$1),
-                      icon: _toolbarIconFrame(DrawingToolIcon(entry.$1)),
+                      icon: _toolbarIconFrame(
+                        DrawingToolIcon(entry.$1),
+                        selected: tool == entry.$1,
+                      ),
                     )),
                   slot(PopupMenuButton<Color>(
                     tooltip: 'Drawing colour',
@@ -2399,7 +2441,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _toolbarIconFrame(Widget child) {
+  Widget _toolbarIconFrame(Widget child, {bool selected = false}) {
     final scheme = Theme.of(context).colorScheme;
     final requested = MediaQuery.sizeOf(context).width < 360 ? 40.0 : 48.0;
     // The chip only ever gets the room its slot can hand over, and a slot
@@ -2414,9 +2456,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         );
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHigh,
-            border: Border.all(color: scheme.outlineVariant),
-            borderRadius: BorderRadius.circular(7),
+            color: selected
+                ? scheme.primaryContainer
+                : scheme.surfaceContainerHigh,
+            border: Border.all(
+              color: selected ? scheme.primary : scheme.outlineVariant,
+            ),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: SizedBox(
             width: side,
@@ -2484,8 +2530,11 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       key: const Key('text-toolbar'),
       height: 60,
       child: Material(
-        elevation: 6,
+        elevation: 0,
         color: Theme.of(context).colorScheme.surfaceContainerLow,
+        shape: Border(
+          top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+        ),
         child: Row(
           children: [
             slot(_toolbarIconFrame(IconButton(
@@ -3114,8 +3163,24 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        canvasWidth = constraints.maxWidth;
+                        // The paper fits the view, but never cuts off ink the
+                        // note already holds: a drawing made on a wider
+                        // screen keeps its width and is reached by panning.
+                        final previousViewportWidth = canvasViewportWidth;
+                        final previousCanvasWidth = canvasWidth;
+                        canvasWidth = math.max(
+                          constraints.maxWidth,
+                          rasterDrawing.width.toDouble(),
+                        );
                         canvasViewportWidth = constraints.maxWidth;
+                        if (previousViewportWidth != canvasViewportWidth ||
+                            previousCanvasWidth != canvasWidth) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              _setView(transformationController.value);
+                            }
+                          });
+                        }
                         canvasViewportHeight = constraints.maxHeight;
                         canvasPageHeight = rasterDrawing.pageHeight > 0
                             ? rasterDrawing.pageHeight.toDouble()
@@ -3278,7 +3343,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                                               height: 14,
                                               child: const IgnorePointer(
                                                 child: ColoredBox(
-                                                  color: Color(0xff34393d),
+                                                  color: Color(0xff2a2e34),
                                                 ),
                                               ),
                                             ),
