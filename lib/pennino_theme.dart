@@ -81,7 +81,7 @@ ThemeData buildPenninoTheme() => ThemeData(
       chipTheme: ChipThemeData(
         backgroundColor: PenninoColors.raised,
         selectedColor: PenninoColors.accentContainer,
-        checkmarkColor: PenninoColors.accentSoft,
+        checkmarkColor: PenninoColors.ink,
         side: const BorderSide(color: PenninoColors.hairline),
         shape: const StadiumBorder(),
         labelStyle: const TextStyle(color: PenninoColors.ink),
@@ -120,6 +120,18 @@ ThemeData buildPenninoTheme() => ThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
+      ),
+      // A tick is the one control that says "done", so it stays neutral
+      // rather than borrowing the accent: white box, dark check.
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? PenninoColors.ink
+              : Colors.transparent,
+        ),
+        checkColor: const WidgetStatePropertyAll(PenninoColors.base),
+        side: const BorderSide(color: PenninoColors.steel, width: 1.6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
