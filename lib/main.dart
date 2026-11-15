@@ -436,7 +436,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   /// The box the canvas is clipped to: everything under it is bottom menu.
   final GlobalKey canvasClipKey = GlobalKey(debugLabel: 'canvas-clip');
   final ValueNotifier<int> canvasRepaint = ValueNotifier(0);
-  DrawTool tool = DrawTool.pen;
+  DrawTool tool = DrawTool.browse;
   Color strokeColor = Colors.blue.shade800;
   Color highlighterColor = Colors.yellow;
   final Map<DrawTool, double> toolWidths = {
@@ -472,6 +472,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   Map<int, Offset>? pinchRoundStart;
   final Set<int> pinchRoundMoved = {};
   int? drawingPointer;
+  int? panPointer;
   Offset? lastSampleViewportPosition;
   double canvasViewportHeight = 0;
   double canvasViewportWidth = 0;
@@ -855,7 +856,11 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       FocusManager.instance.primaryFocus?.unfocus();
     }
     setState(() {
-      tool = nextTool;
+      // Drawing is something you pick up: choosing the tool in hand again puts
+      // it down, and the paper goes back to being dragged.
+      tool = nextTool == tool && nextTool != DrawTool.text
+          ? DrawTool.browse
+          : nextTool;
       if (tool == DrawTool.text) showText = true;
     });
   }
@@ -1086,8 +1091,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     // arrives roughly every second, and a canvas that ignores the first touch
     // after each edit loses strokes. The write itself refuses a partly drawn
     // stroke, and the revision counter picks the new one up on the next save.
-    if (tool == DrawTool.hand ||
-        tool == DrawTool.text ||
+    if (tool == DrawTool.text ||
+        tool == DrawTool.browse ||
         isRasterizing ||
         active != null ||
         activeEraser != null ||
@@ -1320,7 +1325,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   }
 
   void move(PointerMoveEvent event) {
-    if (tool == DrawTool.hand || tool == DrawTool.text) return;
+    if (tool == DrawTool.text || tool == DrawTool.browse) return;
     if (tool == DrawTool.eraser) {
       if (activeEraser != null) _appendStrokePoint(event);
       return;
@@ -1382,16 +1387,27 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     unawaited(_finalizeActiveStroke());
   }
 
+  /// Without a drawing tool in hand there is nothing to draw, so the paper is
+  /// dragged: by any pointer when no tool is selected, and by a finger in text
+  /// mode, where the mouse selects text instead. With a drawing tool selected
+  /// every pointer draws, and two fingers pan and zoom.
+  bool _pointerPans(PointerEvent event) =>
+      tool == DrawTool.browse ||
+      (tool == DrawTool.text && event.kind == PointerDeviceKind.touch);
+
   void _canvasPointerDown(PointerDownEvent event) {
     canvasPointerPositions[event.pointer] = event.localPosition;
     pinchRoundStart = null;
     pinchRoundMoved.clear();
     if (canvasPointerPositions.length == 1) {
-      // The hand is for moving, never for placing a caret: a pan that began
-      // on a line of the document would otherwise hand the gesture to the
-      // text field and stop after one frame.
-      if (tool != DrawTool.hand && _activateDocument(event.localPosition)) {
+      // A press on a letter opens the inline editor in every mode; the rest
+      // of the paper is dragged or drawn on, depending on the tool.
+      if (_activateDocument(event.localPosition)) {
         drawingPointer = null;
+        return;
+      }
+      if (_pointerPans(event)) {
+        panPointer = event.pointer;
         return;
       }
       drawingPointer = event.pointer;
@@ -1399,6 +1415,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       return;
     }
     drawingPointer = null;
+    panPointer = null;
     if (active != null || activeEraser != null) {
       setState(() {
         active = null;
@@ -1449,8 +1466,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       _trackPinchRound(beforeUpdate, event.pointer);
       return;
     }
-    if (tool == DrawTool.hand) {
-      if (drawingPointer != event.pointer) return;
+    if (panPointer == event.pointer) {
       // Same seam as the wheel and the pinch: the finger carries the paper,
       // and the viewport rule still decides whether another page is needed.
       final delta = event.localPosition - previousPosition;
@@ -1515,11 +1531,10 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   void _canvasPointerEnd(PointerEvent event) {
     pinchRoundStart = null;
     pinchRoundMoved.clear();
-    if (drawingPointer == event.pointer &&
-        canvasPointerPositions.length == 1 &&
-        tool != DrawTool.hand) {
+    if (drawingPointer == event.pointer && canvasPointerPositions.length == 1) {
       end(event);
     }
+    if (panPointer == event.pointer) panPointer = null;
     canvasPointerPositions.remove(event.pointer);
     if (canvasPointerPositions.isEmpty) drawingPointer = null;
   }
@@ -2355,7 +2370,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
 
   Widget _drawingToolbar({required bool showStrokeRow}) {
     final tools = [
-      (DrawTool.hand, 'Hand'),
       (DrawTool.text, 'Text'),
       (DrawTool.pencil, 'Pencil'),
       (DrawTool.pen, 'Pen'),
@@ -3062,7 +3076,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         children: [
                           for (final entry in [
-                            (DrawTool.hand, 'Hand'),
                             (DrawTool.text, 'Text'),
                             (DrawTool.pencil, 'Pencil'),
                             (DrawTool.pen, 'Pen'),

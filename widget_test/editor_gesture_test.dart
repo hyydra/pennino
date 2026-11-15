@@ -116,6 +116,14 @@ NoteDirectoryProvider get unwritableFolder {
   return () async => throw const FileSystemException('No notes folder');
 }
 
+/// Drawing needs a tool in hand: with none selected the paper is dragged.
+Future<void> selectPen(WidgetTester tester) async {
+  final byTip = find.byTooltip('Pen');
+  final chip = find.widgetWithText(ChoiceChip, 'Pen');
+  await tester.tap(byTip.evaluate().isNotEmpty ? byTip : chip);
+  await tester.pumpAndSettle();
+}
+
 /// Opens [note] in an editor wide enough to show its save button as a word.
 Future<void> pumpEditor(
   WidgetTester tester,
@@ -197,8 +205,8 @@ Future<void> pumpUntilMarkCommitted(WidgetTester tester) => pumpUntilTrue(
 /// cannot see, and the opposite direction only becomes pressable once the
 /// step it took is on the other stack. Sound while the journal holds one
 /// step, which is what these tests are about.
-IconButton toolButton(WidgetTester tester, String tooltip) => tester
-    .widget<IconButton>(
+IconButton toolButton(WidgetTester tester, String tooltip) =>
+    tester.widget<IconButton>(
       find.ancestor(
         of: find.byTooltip(tooltip),
         matching: find.byType(IconButton),
@@ -375,6 +383,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    await selectPen(tester);
     final canvas = find.byType(InteractiveViewer);
     await tester.tapAt(tester.getTopLeft(canvas) + const Offset(150, 100));
     await tester.pumpAndSettle();
@@ -398,6 +407,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    await selectPen(tester);
     expect(
       toolButton(tester, 'Undo the last mark').onPressed,
       isNull,
@@ -513,6 +523,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    await selectPen(tester);
     final canvas = find.byType(InteractiveViewer);
     final origin = tester.getTopLeft(canvas);
     final gesture = await tester.createGesture(kind: PointerDeviceKind.stylus);
@@ -542,6 +553,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    await selectPen(tester);
     final canvas = find.byType(InteractiveViewer);
     final origin = tester.getTopLeft(canvas);
     final gesture = await tester.createGesture(kind: PointerDeviceKind.stylus);
@@ -571,6 +583,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    await selectPen(tester);
     final canvas = find.byType(InteractiveViewer);
     final origin = tester.getTopLeft(canvas);
     final gesture = await tester.createGesture(kind: PointerDeviceKind.stylus);
@@ -623,6 +636,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await selectPen(tester);
 
     final widthSlider = find.byKey(const Key('stroke-width-slider'));
     expect(tester.widget<Slider>(widthSlider).value, 3);
@@ -844,7 +858,7 @@ void main() {
     expect(tester.getTopRight(drawingToolbar).dx, lessThanOrEqualTo(320));
   });
 
-  testWidgets('two fingers pan and zoom beside the hand tool',
+  testWidgets('two fingers pan and zoom beside the drawing tools',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -856,7 +870,7 @@ void main() {
       ),
     );
 
-    expect(find.byTooltip('Hand'), findsOneWidget);
+    expect(find.byTooltip('Hand'), findsNothing);
     final viewerFinder = find.byType(InteractiveViewer);
     final viewer = tester.widget<InteractiveViewer>(viewerFinder);
     final origin = tester.getTopLeft(viewerFinder);
@@ -888,6 +902,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await selectPen(tester);
 
     final editor = tester.state(find.byType(EditorPage)) as dynamic;
     // Half size, offset by twenty and thirty pixels. Reading the scale from the
@@ -1115,8 +1130,8 @@ void main() {
     await tester.pumpAndSettle();
 
     final state = tester.state(find.byType(EditorPage)) as dynamic;
-    final blank = await tester
-        .runAsync(() => state.renderPreview() as Future<Uint8List>);
+    final blank =
+        await tester.runAsync(() => state.renderPreview() as Future<Uint8List>);
     if (blank == null) throw StateError('Blank preview did not render');
     expect((await previewInk(tester, blank)).$1, 0);
 
@@ -1129,8 +1144,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(documentText(tester), 'Hello widget preview');
 
-    final typed = await tester
-        .runAsync(() => state.renderPreview() as Future<Uint8List>);
+    final typed =
+        await tester.runAsync(() => state.renderPreview() as Future<Uint8List>);
     if (typed == null) throw StateError('Typed preview did not render');
     final ink = await previewInk(tester, typed);
     expect(ink.$1, greaterThan(0));
@@ -1301,6 +1316,7 @@ void main() {
       strokes: [],
     );
     await pumpEditor(tester, note, () async => folder);
+    await selectPen(tester);
     expect(find.text('Saved'), findsOneWidget);
 
     await tester.dragFrom(const Offset(300, 300), const Offset(80, 40));
