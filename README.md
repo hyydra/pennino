@@ -6,75 +6,114 @@ Handwriting-first, local-first notes for Android and Windows.
 [![Build Pennino](https://github.com/hyydra/pennino/actions/workflows/android-apk.yml/badge.svg)](https://github.com/hyydra/pennino/actions/workflows/android-apk.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Pennino is a lightweight handwritten-notes application with a zoomable canvas, one typed text document, checklists and resilient local storage. Notes remain under your control as portable JSON files; Android and Windows users can optionally synchronize them through a selected Google Drive folder.
-
-Android and Windows are supported release platforms. Linux support is experimental and verified by continuous integration, but no packaged Linux download is published yet.
+Open the app and start writing: the launcher canvas is ready immediately, with no note to create first. Every note combines handwriting, one typed text document and checklists on a single page. Notes are plain JSON files on your device, and Android and Windows can optionally keep them in sync through a Google Drive folder.
 
 ## Download
 
-- [Windows installer](https://github.com/hyydra/pennino/releases/latest/download/Pennino-Windows-Setup.exe) — recommended; includes Start menu and uninstall support.
-- [Android APK](https://github.com/hyydra/pennino/releases/latest/download/Pennino-Android.apk) — universal APK for compatible phones and tablets.
-- [All releases and release notes](https://github.com/hyydra/pennino/releases)
+| Platform | File | Notes |
+| --- | --- | --- |
+| Windows | [Pennino-Windows-Setup.exe](https://github.com/hyydra/pennino/releases/latest/download/Pennino-Windows-Setup.exe) | Per-user installer with Start menu entry and uninstall support. Windows SmartScreen may warn because the installer is not code-signed yet. |
+| Android | [Pennino-Android.apk](https://github.com/hyydra/pennino/releases/latest/download/Pennino-Android.apk) | Universal APK for phones and tablets. |
 
-Windows may show a SmartScreen warning because the installer is not yet code-signed.
+All versions and release notes are on the [releases page](https://github.com/hyydra/pennino/releases). Linux builds are experimental and checked in CI only; no Linux download is published.
 
-## Highlights
-- Multiple local notes with typed text, checklists and a fixed drawing layer. Drawing tools include pencil, pen, a yellow-default highlighter, a pixel-blur brush that affects earlier drawings while keeping the paper, typed text and later strokes sharp, a segment eraser and undo/redo.
-- A large canvas with direct two-finger pan and zoom. Drawings behave as fixed canvas pixels: they cannot be selected or moved, while the eraser removes only the brushed section. No separate Hand mode is required.
-- Scrolling downward to the bottom appends exactly one continuous page; zooming, horizontal scrolling and upward scrolling never create pages. Dividers and per-page counters continue vertically down the canvas, and the page count is saved with the note.
-- Each note can use a white, cream, blue, green, red or dark background with plain, lined, grid or dotted paper patterns.
-- A persistent launcher canvas opens immediately when the app starts, so handwriting can begin without first creating or selecting a note. The library remains available from the top-left icon.
-- On Android, the cloud-sync button selects a writable Google Drive location through the system folder picker. On Windows, it selects a Google Drive for Desktop root. Pennino then uses the same visible `Pennino/notes` folder on every device, imports legacy JSON files from the previously selected root, and automatically performs a two-way sync at startup and after each save. Matching note IDs are resolved by their latest update timestamp without requiring a Google Cloud API key.
-- Versioned JSON persistence in the local application documents `Pennino/notes` folder, with automatic migration from the former `notes` folder, atomic replacement, a previous-version backup and recovery after interrupted writes.
-- Background local autosave for every editor change with stable toolbar feedback; the UI changes only when saving actually fails.
-- One typed text document per note, laid out as a fixed column at the top of the page that grows downward and appends pages as you write. Formatting - bold, colour, size and indentation - applies to the selection or to the document default, and character selections keep their own formatting.
-- Fixed, non-scrolling bottom drawing and text toolbars keep an icon toolbar on screen on Android and Windows. Drawing and text colours use compact dropdown palettes. Text controls include icon-labelled lists, font size, bold and indentation, and character selections retain their own bold, colour and size formatting. Tapping a letter returns to text mode with the caret where you tapped; tapping blank paper keeps drawing, and a tap on paper in text mode puts the caret at the end of the document.
-- A graphite, black-leather and champagne-gold interface inspired by late-1990s business organizers, with matching Android and Windows launcher icons.
-- Android native widget displaying a rendered preview of the *last note explicitly pinned* from the editor. The widget can be resized horizontally and vertically from a compact card to a page-sized view. This is not yet a per-widget note selector.
-- Responsive Flutter UI shared by Android and Windows, with experimental Linux support.
-- Automatic update checks run on every application start. The update row stays hidden when the app is current and appears directly above the bottom toolbar only when a newer release is available. Windows downloads `Pennino-Windows-Setup.exe` and launches the installer after confirmation; Android downloads the universal APK and opens the system installer.
+## What it does
 
-## Requirements
-- Flutter stable SDK and Android Studio / Android SDK for Android builds.
-- Visual Studio with Desktop development with C++ for Windows builds.
-- Clang, CMake, Ninja, pkg-config and GTK 3 development libraries for Linux builds.
+**Write and draw**
+- Pencil, pen, highlighter, a pixel-blur brush, a segment eraser, and undo/redo.
+- Drawings are fixed canvas pixels: they cannot be selected or moved, and the eraser removes only the section you brush.
+- Stylus pressure and tilt are recorded.
 
-## Setup
+**Type**
+- One typed document per note, laid out in a column at the top of the page. It grows downward and adds pages as you write.
+- Bold, colour, size and indentation apply to the selection or to the document default. Checklists are lists inside the text.
+- Press a letter to start editing in place; the text toolbar appears.
 
-1. Install Flutter stable and the platform toolchain for Android, Linux and/or Windows.
-2. Clone this repository and run `flutter pub get`.
-3. Run `flutter run -d windows`, `flutter run -d linux` or `flutter run -d <Android-device-id>`.
-4. Build with `flutter build windows --release`, `flutter build linux --release` or `flutter build apk --release`.
+**Move around the page**
+- The page is as wide as your screen. There is nothing to scroll sideways, and the top edge is a firm stop. A drawing made on a wider screen keeps its width, and you pan sideways to reach it.
+- Nothing draws until you pick a drawing tool. With none selected, press blank paper and drag to move the page; press a letter to open the inline editor. Pick Pencil, Pen, Highlighter, Eraser or Blur to draw with a finger, stylus or mouse, and pick the same tool again to put it down. Two fingers pan and zoom in any tool, and so does the mouse wheel. Pinch to zoom from 1× to 5×.
+- Scrolling to the bottom adds one page. Zooming and scrolling up never do. The page count is saved with the note, and the current page shows in a fixed chip at the top-left of the view.
 
-The repository contains the Android and Windows platform projects, native widget integration and manifests. Linux is generated in CI and can be generated locally with `flutter create --platforms=linux .`. Do not recreate the Android or Windows projects during normal setup.
+**Organise**
+- A library of local notes, plus the launcher canvas that opens first.
+- Per-note background (white, cream, blue, green, red or dark) and paper pattern (plain, lined, grid or dotted).
 
-To show a note on the Android home screen: open the note, choose **Update home widget**, then add the Pennino widget from the launcher. The resizable widget works on compatible Android phones and tablets and opens the writable launcher canvas when tapped.
+**Keep it safe**
+- Background autosave after every change. The toolbar changes only if saving fails.
+- Versioned JSON files with atomic replacement, a previous-version backup and recovery after an interrupted write.
+- Notes live in the app's documents folder under `Pennino/notes`; notes from the older `notes` folder are copied over once.
 
-## GitHub releases
+**Sync (optional)**
+- Android: choose a writable Google Drive location with the system folder picker. Windows: choose the Google Drive for Desktop root.
+- Pennino uses the same visible `Pennino/notes` folder on every device and syncs both ways at startup and after each save. When the same note exists on both sides, the later update wins. No Google Cloud API key is needed.
 
-Pushing a version tag such as `v0.4.12` builds and publishes two assets:
+**Android home-screen widget**
+- Open a note, choose **Update home widget**, then add the Pennino widget from the launcher. It shows the last note you pinned, resizes from a compact card to a full page, and opens the launcher canvas when tapped. It is not a per-widget note picker yet.
 
-- `Pennino-Android.apk`: a universal APK for compatible Android phones and tablets.
-- `Pennino-Windows-Setup.exe`: a per-user Windows installer with Start menu and optional desktop shortcuts plus uninstall support.
+**Updates**
+- The app checks for a newer release on every start and shows an update row above the toolbar only when one exists. Downloads are verified against the release's SHA-256 digest before they are handed to the installer.
 
-Android releases require the four repository secrets documented in the release workflow: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Keep the original keystore backed up permanently; Android updates must use the same signing key.
+## Build from source
 
-The in-app Android and Windows updaters require GitHub release assets to include a SHA-256 digest. Downloads are verified against that digest before they are handed to the platform installer.
+Requirements:
+
+- [Flutter](https://docs.flutter.dev/get-started/install) stable (CI pins 3.47.5).
+- Android builds: Android Studio and the Android SDK.
+- Windows builds: Visual Studio with the *Desktop development with C++* workload.
+- Linux builds: Clang, CMake, Ninja, pkg-config and the GTK 3 development libraries.
+
+```bash
+flutter pub get
+flutter run -d windows      # or: -d linux, -d <android-device-id>
+flutter build apk --release
+flutter build windows --release
+```
+
+The Android and Windows projects are checked in; do not recreate them. The Linux project is generated in CI and locally with `flutter create --platforms=linux .`.
+
+## Develop
+
+```bash
+flutter analyze
+flutter test                                    # unit and widget suites in test/
+flutter test widget_test/editor_gesture_test.dart
+```
+
+CI runs the same checks on Android, Linux and Windows for every pull request and push to `main`.
+
+| Path | Contents |
+| --- | --- |
+| `lib/main.dart` | App shell, library, and the editor with its toolbars and gestures |
+| `lib/pennino_theme.dart` | The dark, high-contrast theme and its palette |
+| `lib/raster_drawing.dart` | Tiled raster storage for drawings |
+| `lib/note_data.dart`, `note_store.dart`, `note_storage.dart` | Note model, JSON persistence and storage folders |
+| `lib/drive_sync_service.dart` | Google Drive folder sync |
+| `lib/update_service.dart` | In-app update check and verified download |
+| `android/`, `windows/`, `installer/` | Platform projects, the widget, and the Inno Setup script |
+| `docs/` | Build ledger and handoff notes |
+
+## Releases
+
+Pushing a version tag such as `v0.4.30` runs the release workflow, which builds both assets and publishes them as a GitHub Release:
+
+- `Pennino-Android.apk`
+- `Pennino-Windows-Setup.exe`
+
+A release needs the version bumped in `pubspec.yaml` (`version: x.y.z+build`) and a Fastlane changelog named after the build number in `fastlane/metadata/android/en-US/changelogs/`. Android signing needs four repository secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Keep the original keystore backed up permanently, because Android updates must be signed with the same key.
+
+Each published build is recorded in [docs/BUILDS.md](docs/BUILDS.md) after its assets are downloaded and their digests recomputed. The project history is in [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Open-source software
 
-Pennino is MIT-licensed and builds on the following direct open-source projects. Their own licence terms continue to apply:
+Pennino is MIT-licensed and builds on these direct dependencies, each under its own licence:
 
-- [Flutter](https://github.com/flutter/flutter) — cross-platform application framework (BSD-3-Clause).
-- [crypto](https://pub.dev/packages/crypto) — SHA-256 verification of downloaded updates (BSD-3-Clause).
-- [draw_your_image](https://github.com/chooyan-eng/draw_your_image) — stylus pressure/tilt data model and unsmoothed stroke path support (Apache-2.0).
-- [file_selector](https://github.com/flutter/packages/tree/main/packages/file_selector) — native file and folder selection (BSD-3-Clause).
-- [path_provider](https://github.com/flutter/packages/tree/main/packages/path_provider/path_provider) — platform application-data paths (BSD-3-Clause).
-- [uuid](https://github.com/Daegalus/dart-uuid) — note identifiers (MIT).
+- [Flutter](https://github.com/flutter/flutter): application framework (BSD-3-Clause)
+- [crypto](https://pub.dev/packages/crypto): SHA-256 verification of updates (BSD-3-Clause)
+- [draw_your_image](https://github.com/chooyan-eng/draw_your_image): stylus pressure and tilt model, unsmoothed stroke paths (Apache-2.0)
+- [file_selector](https://github.com/flutter/packages/tree/main/packages/file_selector): native file and folder picking (BSD-3-Clause)
+- [path_provider](https://github.com/flutter/packages/tree/main/packages/path_provider/path_provider): platform data paths (BSD-3-Clause)
+- [uuid](https://github.com/Daegalus/dart-uuid): note identifiers (MIT)
 
-The app's **Open-source software** menu lists these projects and opens Flutter's complete generated licence catalogue, including transitive dependencies.
+The app's **Open-source software** menu lists these and opens Flutter's full generated licence catalogue, including transitive dependencies.
 
-## Tech
-Flutter/Dart UI, Kotlin native Android widget (RemoteViews), pressure-aware `draw_your_image` stroke primitives, JSON files, `path_provider`, `uuid`.
-
-Android application ID for Play testing: `com.hyydra.pennino`.
+Android application ID: `com.hyydra.pennino`.

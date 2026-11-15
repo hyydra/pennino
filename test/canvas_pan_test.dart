@@ -44,9 +44,8 @@ IconButton undoButton(WidgetTester tester) => tester.widget<IconButton>(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('one finger pans the paper with the hand tool', (tester) async {
+  testWidgets('one finger pans the paper in text mode', (tester) async {
     await openEditor(tester);
-    await pickTool(tester, 'Hand');
     final before = paperTopLeft(tester);
     final gesture = await tester.startGesture(before + const Offset(200, 200));
     await gesture.moveBy(const Offset(-30, -80));
@@ -58,7 +57,7 @@ void main() {
     expect(
       during - before,
       const Offset(0, -80),
-      reason: 'the hand tool moves the paper up by the finger delta, and the '
+      reason: 'a finger moves the paper up by its own delta, and the '
           'paper is as wide as the view, so it never moves sideways',
     );
     expect(
@@ -68,9 +67,52 @@ void main() {
     );
   });
 
+  testWidgets('a drawing wider than the view keeps its width and pans sideways',
+      (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(500, 900);
+    final note = Note(
+      id: 'wide-raster-note',
+      title: 'Wide',
+      updated: DateTime.utc(2026, 11, 15),
+      text: '',
+      strokes: [],
+      pageCount: 3,
+      rasterWidth: 1400,
+      rasterPageHeight: 1200,
+    );
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(platform: TargetPlatform.android),
+      home: EditorPage(note: note),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(paperStack).width,
+      1400,
+      reason: 'ink drawn on a wider screen must not be cut off by this one',
+    );
+    final before = paperTopLeft(tester);
+    final gesture = await tester.startGesture(before + const Offset(300, 200));
+    await gesture.moveBy(const Offset(-300, 0));
+    await tester.pump();
+    final during = paperTopLeft(tester);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      during - before,
+      const Offset(-300, 0),
+      reason: 'the far side of a wide drawing is reached by panning',
+    );
+  });
+
   testWidgets('the paper cannot be pulled past its top edge', (tester) async {
     await openEditor(tester);
-    await pickTool(tester, 'Hand');
     final before = paperTopLeft(tester);
     final gesture = await tester.startGesture(before + const Offset(200, 200));
     await gesture.moveBy(const Offset(25, 120));
@@ -112,10 +154,9 @@ void main() {
     );
   });
 
-  testWidgets('a hand pan that starts on a line of text keeps panning',
+  testWidgets('a press on a line of text opens the inline editor',
       (tester) async {
     await openEditor(tester, text: 'one');
-    await pickTool(tester, 'Hand');
     final before = paperTopLeft(tester);
     // The first line starts at the paper margin, well inside the view.
     final gesture = await tester.startGesture(before + const Offset(70, 60));
@@ -125,17 +166,52 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
+    expect(during, before, reason: 'a press on a letter edits, it never pans');
     expect(
-      during - before,
-      const Offset(0, -60),
-      reason: 'a hand pan is never handed over to the text field',
+      find.byKey(const Key('text-toolbar')),
+      findsOneWidget,
+      reason: 'the text toolbar is the sign the editor is on',
     );
+  });
+
+  testWidgets('a press on blank paper drags it until a drawing tool is picked',
+      (tester) async {
+    await openEditor(tester, text: 'one');
+    final before = paperTopLeft(tester);
+    final gesture = await tester.startGesture(before + const Offset(600, 300));
+    await gesture.moveBy(const Offset(0, -70));
+    await tester.pump();
+    final during = paperTopLeft(tester);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(during - before, const Offset(0, -70));
+    expect(
+      undoButton(tester).onPressed,
+      isNull,
+      reason: 'with no tool in hand a drag is not a mark',
+    );
+  });
+
+  testWidgets('choosing the active drawing tool again puts it down',
+      (tester) async {
+    await openEditor(tester);
+    await pickTool(tester, 'Pen');
+    await pickTool(tester, 'Pen');
+    final before = paperTopLeft(tester);
+    final gesture = await tester.startGesture(before + const Offset(600, 300));
+    await gesture.moveBy(const Offset(0, -50));
+    await tester.pump();
+    final during = paperTopLeft(tester);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(during - before, const Offset(0, -50));
   });
 
   testWidgets('the page number stays in the view top-left as the paper moves',
       (tester) async {
     await openEditor(tester);
-    await pickTool(tester, 'Hand');
     final indicator = find.byKey(const Key('page-indicator'));
     expect(indicator, findsOneWidget);
     expect(find.text('1/3'), findsOneWidget);

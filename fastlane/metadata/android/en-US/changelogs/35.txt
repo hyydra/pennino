@@ -1,0 +1,1 @@
+A cleaner, high-contrast look with a single blue accent. Nothing draws until you pick a drawing tool: with none selected, drag blank paper to move the page and press a letter to edit it in place. Wide drawings stay reachable and old strokes are no longer lost when a note is upgraded.

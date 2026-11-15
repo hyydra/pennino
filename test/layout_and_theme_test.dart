@@ -106,12 +106,16 @@ void main() {
     expect(chips.first.width, greaterThanOrEqualTo(44));
   });
 
-  testWidgets('a narrow screen keeps every ink tool tappable',
-      (tester) async {
+  testWidgets('a narrow screen keeps every ink tool tappable', (tester) async {
     await openEditor(tester, size: const Size(240, 600));
     expect(tester.takeException(), isNull);
     for (final tool in const [
-      'Hand', 'Text', 'Pencil', 'Pen', 'Highlighter', 'Eraser', 'Blur'
+      'Text',
+      'Pencil',
+      'Pen',
+      'Highlighter',
+      'Eraser',
+      'Blur'
     ]) {
       final cell = find.byTooltip(tool);
       expect(cell, findsOneWidget, reason: '$tool left the toolbar');
