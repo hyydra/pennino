@@ -1,0 +1,1 @@
+The home-screen widget now shows the note at the phone's page width without stretching it. Text wraps at that width on every device, and bigger screens draw a thin line where it ends.

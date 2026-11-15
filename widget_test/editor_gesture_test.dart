@@ -279,6 +279,61 @@ int alphaOf(Color color) => color.toARGB32() >> 24;
 /// Counts pixels darker than anything the bare paper produces, and reports
 /// where they are. The lightest paper pixel measured in a blank preview sums
 /// to 719 across RGB, so 700 is an ink threshold the paper never crosses.
+/// Where two pictures of the same size differ: how many pixels, and the
+/// rectangle around them. Paper lines are in both, so this is what was added.
+Future<(int, Rect)> previewDiff(
+  WidgetTester tester,
+  Uint8List before,
+  Uint8List after,
+) async {
+  final result = await tester.runAsync(() async {
+    Future<ui.Image> decode(Uint8List png) async {
+      final codec = await ui.instantiateImageCodec(png);
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      return frame.image;
+    }
+
+    final a = await decode(before);
+    final b = await decode(after);
+    final dataA = (await a.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+    final dataB = (await b.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+    var count = 0;
+    var minX = a.width;
+    var minY = a.height;
+    var maxX = -1;
+    var maxY = -1;
+    for (var y = 0; y < a.height; y++) {
+      for (var x = 0; x < a.width; x++) {
+        final i = (y * a.width + x) * 4;
+        var differs = false;
+        for (var c = 0; c < 3; c++) {
+          if ((dataA.getUint8(i + c) - dataB.getUint8(i + c)).abs() > 40) {
+            differs = true;
+          }
+        }
+        if (!differs) continue;
+        count++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    a.dispose();
+    b.dispose();
+    return (
+      count,
+      count == 0
+          ? Rect.zero
+          : Rect.fromLTRB(minX.toDouble(), minY.toDouble(), maxX.toDouble(),
+              maxY.toDouble())
+    );
+  });
+  if (result == null) throw StateError('Preview pixels could not be read');
+  return result;
+}
+
 Future<(int, Rect)> previewInk(WidgetTester tester, Uint8List png) async {
   final result = await tester.runAsync(() async {
     final codec = await ui.instantiateImageCodec(png);
@@ -1149,7 +1204,6 @@ void main() {
     final blank =
         await tester.runAsync(() => state.renderPreview() as Future<Uint8List>);
     if (blank == null) throw StateError('Blank preview did not render');
-    expect((await previewInk(tester, blank)).$1, 0);
 
     await chooseTool(tester, 'Text');
     await tester.pumpAndSettle();
@@ -1163,15 +1217,16 @@ void main() {
     final typed =
         await tester.runAsync(() => state.renderPreview() as Future<Uint8List>);
     if (typed == null) throw StateError('Typed preview did not render');
-    final ink = await previewInk(tester, typed);
+    final ink = await previewDiff(tester, blank, typed);
     expect(ink.$1, greaterThan(0));
     expect(typed, isNot(equals(blank)));
-    // The document starts at canvas (56, 52) on a 2000x1200 page, so at the
-    // preview's 0.35 scale its ink belongs near (20, 18). Painting without
-    // that scale would leave it at (56, 52) and twice as tall.
-    expect(ink.$2.left, lessThan(40));
-    expect(ink.$2.top, lessThan(40));
-    expect(ink.$2.bottom, lessThan(60));
+    // The picture is the phone's 400px page at 1.2x, and the document starts
+    // at page (56, 52), so its ink belongs near (67, 62). Painting at any
+    // other scale, or stretched to a different shape, would put it elsewhere.
+    expect(ink.$2.left, inInclusiveRange(55, 100));
+    expect(ink.$2.top, inInclusiveRange(55, 100));
+    expect(ink.$2.bottom, lessThan(130));
+    expect(ink.$2.right, lessThan(480 * 0.8));
   });
 
   testWidgets('text wins over every drawing tool when tapped', (tester) async {
@@ -1226,13 +1281,18 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Licences'), findsOneWidget);
   });
 
-  testWidgets('the document spans the page from the top of page 1',
+  testWidgets('the document is a phone-width column from the top of page 1',
       (tester) async {
     await openNoteWithText(tester, 'Hello');
     final stack = find.byKey(const Key('canvas-layer-stack'));
-    final stackWidth = tester.getSize(stack).width;
+    expect(
+      tester.getSize(stack).width,
+      greaterThan(mobilePageWidth),
+      reason: 'a wide window has room beyond the phone width',
+    );
+    expect(find.byKey(const Key('mobile-width-line')), findsOneWidget);
 
-    expect(documentSize(tester).width, greaterThan(stackWidth * 0.9));
+    expect(documentSize(tester).width, mobilePageWidth - 96);
     expect(
       documentTopLeft(tester) - tester.getTopLeft(stack),
       const Offset(48, 48),

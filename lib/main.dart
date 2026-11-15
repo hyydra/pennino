@@ -31,6 +31,11 @@ import 'widget_refresh.dart';
 export 'app_version.dart' show appVersion;
 export 'tool_icons.dart' show DrawTool;
 
+/// The width of a phone page in logical pixels. Text wraps here on every
+/// device, the home-screen widget shows exactly this width, and a bigger
+/// screen marks it with a line so the phone's edge is visible.
+const double mobilePageWidth = 400;
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   QuitSaveCoordinator.initialize();
@@ -1143,8 +1148,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   /// The document owns a fixed column: the full page width between the paper
   /// margins. Nothing about it is stored per note, so it cannot be moved or
   /// resized and there is no box to grow.
-  double get _documentColumnWidth =>
-      math.max(240, canvasWidth - 2 * _documentPageMargin);
+  double get _documentColumnWidth => math.max(
+      240, math.min(canvasWidth, mobilePageWidth) - 2 * _documentPageMargin);
 
   /// The document's own base style. `RichTextEditingController.buildTextSpan`
   /// merges each stored range onto this, so the layout used for hit-testing
@@ -1968,10 +1973,16 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
               ? Icons.save
               : Icons.check;
 
+  /// The home-screen picture: the top of the first page, exactly the phone's
+  /// page width wide, at one scale so nothing is stretched. The widget shows
+  /// it top-left aligned, so its width always matches the phone's.
   Future<Uint8List> renderPreview() async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    const size = Size(700, 420);
+    const size = Size(480, 720);
+    const scale = 480 / mobilePageWidth;
+    const pageSize = Size(mobilePageWidth, 720 / scale);
+    canvas.scale(scale, scale);
     StrokePainter(
       widget.note.strokes,
       null,
@@ -1980,23 +1991,16 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         (item) => item.name == widget.note.backgroundPattern,
         orElse: () => PaperPattern.lined,
       ),
-    ).paint(canvas, size);
+    ).paint(canvas, pageSize);
     // The preview image is painted off the widget tree, so nothing asks the
     // store for the tiles it is about to draw. The store decodes the page it
     // picks itself, and it picks the first page that has ink: page zero is
     // blank paper for a note whose strokes start further down, and that
     // preview is what a home screen widget then shows.
-    await rasterDrawing.paintPreview(canvas, size);
-    // The document lives in canvas coordinates, so it takes the page's own
-    // scale rather than the raster's; without it a typed note pins as blank
-    // paper.
+    await rasterDrawing.paintPreview(canvas, pageSize, scale: 1);
+    // The document lives in canvas coordinates, which the picture now shares.
     final document = _layoutDocument();
     if (document.width > 0 && document.height > 0) {
-      canvas.save();
-      canvas.scale(
-        size.width / math.max(1, canvasWidth),
-        size.height / math.max(1, canvasPageHeight),
-      );
       document.paint(
         canvas,
         Offset(
@@ -2004,7 +2008,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
           _documentPageMargin + _documentContentTop,
         ),
       );
-      canvas.restore();
     }
     document.dispose();
     final picture = recorder.endRecording();
@@ -3341,6 +3344,23 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                                               child: const IgnorePointer(
                                                 child: ColoredBox(
                                                   color: Color(0xff2a2e34),
+                                                ),
+                                              ),
+                                            ),
+                                          if (canvasWidth > mobilePageWidth + 1)
+                                            Positioned(
+                                              key: const Key(
+                                                'mobile-width-line',
+                                              ),
+                                              left: mobilePageWidth,
+                                              top: 0,
+                                              bottom: 0,
+                                              width: 1.5,
+                                              child: IgnorePointer(
+                                                child: ColoredBox(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .outline,
                                                 ),
                                               ),
                                             ),

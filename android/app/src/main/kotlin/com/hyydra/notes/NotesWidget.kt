@@ -30,7 +30,7 @@ class NotesWidget : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_title, prefs.getString("title", "Pennino"))
             val file = File(context.filesDir, "notes_widget.png")
             if (file.exists()) {
-                val opts = BitmapFactory.Options().apply { inPreferredConfig = android.graphics.Bitmap.Config.RGB_565; inSampleSize = 2 }
+                val opts = BitmapFactory.Options().apply { inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 }
                 BitmapFactory.decodeFile(file.absolutePath, opts)?.let { views.setImageViewBitmap(R.id.widget_image, it) }
             }
             val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
