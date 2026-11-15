@@ -2484,7 +2484,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _toolbarIconFrame(Widget child, {bool selected = false}) {
+  /// A toolbar button's frame: no box, just the icon, with a round tint behind
+  /// the one in hand and a ring around the entry to the other row.
+  Widget _toolbarIconFrame(
+    Widget child, {
+    bool selected = false,
+    bool ring = false,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     final requested = MediaQuery.sizeOf(context).width < 360 ? 32.0 : 36.0;
     // The chip only ever gets the room its slot can hand over, and a slot
@@ -2499,13 +2505,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         );
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: selected
-                ? scheme.primaryContainer
-                : scheme.surfaceContainerHigh,
-            border: Border.all(
-              color: selected ? scheme.primary : scheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(12),
+            shape: BoxShape.circle,
+            color: selected ? scheme.primaryContainer : Colors.transparent,
+            border: ring || selected
+                ? Border.all(
+                    color: selected ? scheme.primary : scheme.outline,
+                  )
+                : null,
           ),
           child: SizedBox(
             width: side,
@@ -2580,11 +2586,14 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
         ),
         child: Row(
           children: [
-            slot(_toolbarIconFrame(IconButton(
-              tooltip: 'Drawing tools',
-              onPressed: () => _selectTool(DrawTool.pen),
-              icon: const Icon(Icons.gesture),
-            ))),
+            slot(_toolbarIconFrame(
+              IconButton(
+                tooltip: 'Drawing tools',
+                onPressed: () => _selectTool(DrawTool.pen),
+                icon: const Icon(Icons.gesture),
+              ),
+              ring: true,
+            )),
             slot(_toolbarIconFrame(PopupMenuButton<String>(
               tooltip: 'Lists',
               icon: const Icon(Icons.check_box_outlined),
@@ -2631,10 +2640,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
             ))),
             slot(_toolbarIconFrame(PopupMenuButton<double>(
               tooltip: 'Font size',
-              icon: Text(
-                '${documentFormat.fontSize.round()}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
               onSelected: _setTextFontSize,
               itemBuilder: (_) => [
                 for (final size in const [14.0, 18.0, 20.0, 24.0, 30.0, 36.0])
@@ -2649,6 +2654,19 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                     ]),
                   ),
               ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${documentFormat.fontSize.round()}',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const Icon(Icons.arrow_drop_down, size: 16),
+                  ],
+                ),
+              ),
             ))),
             slot(_toolbarIconFrame(IconButton(
               tooltip: 'Bold',
