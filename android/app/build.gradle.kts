@@ -52,12 +52,6 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
-            // Phones and tablets are arm64 or arm; the x86_64 libraries only
-            // serve emulators and a few Chromebooks, and are over a third of
-            // the universal APK. Debug builds keep every ABI for emulators.
-            ndk {
-                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-            }
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
@@ -66,6 +60,17 @@ android {
                 null
             }
         }
+    }
+}
+
+// Phones and tablets are arm64 or arm; the x86_64 libraries only serve
+// emulators and a few Chromebooks, and are over a third of the universal APK.
+// An ABI filter on the build type does not hold, because `flutter build apk`
+// always asks Gradle for x86_64 as well, so the libraries are left out of the
+// release package itself. Debug builds keep every ABI for emulators.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.add("**/x86_64/**")
     }
 }
 
