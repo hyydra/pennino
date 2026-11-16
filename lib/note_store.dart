@@ -28,6 +28,8 @@ class NoteStore {
     '.json.bak.tmp',
   ];
 
+  static const int _loadConcurrency = 4;
+
   final NoteDirectoryProvider directoryProvider;
   final SaveStageHook? afterSaveStage;
 
@@ -62,15 +64,31 @@ class NoteStore {
     }
 
     final tombstones = await _readTombstones(directory);
-    for (final noteId in noteIds) {
-      final note = await _loadNote(directory, noteId);
-      if (note == null) continue;
-      // A deletion is newer than the payload it suppresses, so the note stays
-      // hidden. A payload edited after the deletion is not suppressed and is
-      // listed again, which is how an edit on another device revives a note.
-      final tombstone = tombstones[noteId];
-      if (tombstone != null && tombstone.suppresses(note)) continue;
-      notes.add(note);
+    // Reading is mostly waiting on the disk, so a few notes are in flight at
+    // once instead of one after another; four keeps memory bounded when each
+    // note carries megabytes of raster tiles.
+    final ids = noteIds.toList();
+    for (var start = 0; start < ids.length; start += _loadConcurrency) {
+      final batch = ids.sublist(
+        start,
+        start + _loadConcurrency > ids.length
+            ? ids.length
+            : start + _loadConcurrency,
+      );
+      final loaded = await Future.wait(
+        batch.map((noteId) => _loadNote(directory, noteId)),
+      );
+      for (var i = 0; i < batch.length; i++) {
+        final note = loaded[i];
+        if (note == null) continue;
+        // A deletion is newer than the payload it suppresses, so the note
+        // stays hidden. A payload edited after the deletion is not suppressed
+        // and is listed again, which is how an edit on another device revives
+        // a note.
+        final tombstone = tombstones[batch[i]];
+        if (tombstone != null && tombstone.suppresses(note)) continue;
+        notes.add(note);
+      }
     }
 
     notes.sort((first, second) => second.updated.compareTo(first.updated));

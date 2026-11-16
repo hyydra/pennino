@@ -13,7 +13,7 @@ Open the app and start writing: the launcher canvas is ready immediately, with n
 | Platform | File | Notes |
 | --- | --- | --- |
 | Windows | [Pennino-Windows-Setup.exe](https://github.com/hyydra/pennino/releases/latest/download/Pennino-Windows-Setup.exe) | Per-user installer with Start menu entry and uninstall support. Windows SmartScreen may warn because the installer is not code-signed yet. |
-| Android | [Pennino-Android.apk](https://github.com/hyydra/pennino/releases/latest/download/Pennino-Android.apk) | Universal APK for phones and tablets. |
+| Android | [Pennino-Android.apk](https://github.com/hyydra/pennino/releases/latest/download/Pennino-Android.apk) | Universal APK for arm64 and arm phones and tablets (no x86 emulator build). |
 
 All versions and release notes are on the [releases page](https://github.com/hyydra/pennino/releases). Linux builds are experimental and checked in CI only; no Linux download is published.
 

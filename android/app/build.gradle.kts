@@ -52,6 +52,12 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
+            // Phones and tablets are arm64 or arm; the x86_64 libraries only
+            // serve emulators and a few Chromebooks, and are over a third of
+            // the universal APK. Debug builds keep every ABI for emulators.
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
