@@ -1,0 +1,1 @@
+A smaller Android download (about 19 MB less, because the x86 emulator libraries are no longer included) and a quicker notes list when you have many large notes.
