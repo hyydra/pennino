@@ -1,0 +1,1 @@
+The home-screen widget now fills its width with the page and shows as much of the top as fits, instead of squeezing the whole page into a narrow strip. It redraws when you resize it.

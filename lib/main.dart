@@ -1979,9 +1979,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   Future<Uint8List> renderPreview() async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    const size = Size(480, 720);
-    const scale = 480 / mobilePageWidth;
-    const pageSize = Size(mobilePageWidth, 720 / scale);
+    const size = Size(800, 1200);
+    const scale = 800 / mobilePageWidth;
+    const pageSize = Size(mobilePageWidth, 1200 / scale);
     canvas.scale(scale, scale);
     StrokePainter(
       widget.note.strokes,

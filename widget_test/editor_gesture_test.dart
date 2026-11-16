@@ -1220,13 +1220,13 @@ void main() {
     final ink = await previewDiff(tester, blank, typed);
     expect(ink.$1, greaterThan(0));
     expect(typed, isNot(equals(blank)));
-    // The picture is the phone's 400px page at 1.2x, and the document starts
-    // at page (56, 52), so its ink belongs near (67, 62). Painting at any
+    // The picture is the phone's 400px page at 2x, and the document starts
+    // at page (56, 52), so its ink belongs near (112, 104). Painting at any
     // other scale, or stretched to a different shape, would put it elsewhere.
-    expect(ink.$2.left, inInclusiveRange(55, 100));
-    expect(ink.$2.top, inInclusiveRange(55, 100));
-    expect(ink.$2.bottom, lessThan(130));
-    expect(ink.$2.right, lessThan(480 * 0.8));
+    expect(ink.$2.left, inInclusiveRange(95, 160));
+    expect(ink.$2.top, inInclusiveRange(95, 160));
+    expect(ink.$2.bottom, lessThan(220));
+    expect(ink.$2.right, lessThan(800 * 0.8));
   });
 
   testWidgets('text wins over every drawing tool when tapped', (tester) async {
