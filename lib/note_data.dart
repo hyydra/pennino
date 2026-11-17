@@ -260,6 +260,10 @@ class Note {
   List<Stroke> strokes;
   List<TaskItem> tasks;
 
+  /// How many bytes the note's file had when it was read from disk. It is
+  /// not part of the file, and is 0 for a note that was never read.
+  int storedBytes = 0;
+
   Note({
     required this.id,
     required this.title,
@@ -482,4 +486,11 @@ class NoteTombstone {
         'id': id,
         'deleted': deleted.toUtc().toIso8601String(),
       };
+}
+
+/// "812 B", "37 KB" or "1.4 MB": the size a note's file has on disk.
+String formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).round()} KB';
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }

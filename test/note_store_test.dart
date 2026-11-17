@@ -154,4 +154,27 @@ void main() {
       reason: 'unsafe note id cannot write outside the note directory',
     );
   });
+
+  test('a loaded note knows how many bytes its file has', () async {
+    final directory = await Directory.systemTemp.createTemp('notes-size-');
+    addTearDown(() => directory.delete(recursive: true));
+    final store = NoteStore(directoryProvider: () async => directory);
+    await store.save(Note(
+      id: 'sized-note',
+      title: 'Sized',
+      updated: DateTime.utc(2026, 11, 17),
+      strokes: [],
+    ));
+
+    final loaded = (await store.load()).single;
+    final onDisk = await File('${directory.path}/sized-note.json').length();
+    expect(loaded.storedBytes, onDisk);
+    expect(loaded.storedBytes, greaterThan(0));
+  });
+
+  test('byte sizes read as B, KB and MB', () {
+    expect(formatBytes(812), '812 B');
+    expect(formatBytes(37 * 1024 + 200), '37 KB');
+    expect(formatBytes(1536 * 1024), '1.5 MB');
+  });
 }

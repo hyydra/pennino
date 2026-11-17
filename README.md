@@ -36,7 +36,7 @@ All versions and release notes are on the [releases page](https://github.com/hyy
 - Scrolling to the bottom adds one page. Zooming and scrolling up never do. The page count is saved with the note, and the current page shows in a fixed chip at the top-left of the view.
 
 **Organise**
-- A library of local notes, opened with the house button at the top left, plus the launcher canvas that opens first.
+- A library of local notes, opened with the house button at the top left, each row showing when it changed and how many bytes its file takes, plus the launcher canvas that opens first.
 - Per-note background (white, cream, blue, green, red or dark) and paper pattern (plain, lined, grid or dotted).
 
 **Keep it safe**
