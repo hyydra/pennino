@@ -365,7 +365,11 @@ class _LibraryPageState extends State<LibraryPage> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: Text(_updatedLabel(n.updated)),
+              subtitle: Text(
+                n.storedBytes > 0
+                    ? '${_updatedLabel(n.updated)} · ${formatBytes(n.storedBytes)}'
+                    : _updatedLabel(n.updated),
+              ),
               onTap: () => openNote(n),
               trailing: PopupMenuButton<String>(
                 onSelected: (v) async {

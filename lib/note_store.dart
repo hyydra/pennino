@@ -245,8 +245,10 @@ class NoteStore {
   Future<Note?> _readNoteFile(File file, String noteId) async {
     if (!await file.exists()) return null;
     try {
-      final value = jsonDecode(await file.readAsString());
-      final note = Note.fromJson(Map<String, dynamic>.from(value as Map));
+      final source = await file.readAsString();
+      final value = jsonDecode(source);
+      final note = Note.fromJson(Map<String, dynamic>.from(value as Map))
+        ..storedBytes = await file.length();
       return note.id == noteId && _safeNoteId.hasMatch(note.id) ? note : null;
     } catch (_) {
       // Keep damaged files for recovery or manual inspection.
