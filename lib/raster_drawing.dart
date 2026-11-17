@@ -539,6 +539,20 @@ class RasterDrawingStore {
 
   bool pageHasTiles(int page) => _keysByPage.containsKey(page);
 
+  /// Decodes [page] and paints it in its own coordinates, for a picture drawn
+  /// off the widget tree where nothing else would ask for its tiles.
+  Future<void> paintPagePreview(Canvas canvas, int page) async {
+    _ensureNotDisposed();
+    if (width <= 0 || pageHeight <= 0 || !pageHasTiles(page)) return;
+    await ensureResident(keysForPage(page));
+    if (_disposed) return;
+    paintPage(
+      canvas,
+      page,
+      paint: Paint()..filterQuality = FilterQuality.medium,
+    );
+  }
+
   void paintPage(Canvas canvas, int page, {Paint? paint}) {
     for (final key in keysForPage(page)) {
       final image = tiles[key];

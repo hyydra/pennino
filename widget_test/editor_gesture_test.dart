@@ -15,6 +15,7 @@ import 'package:pennino/note_store.dart';
 import 'package:pennino/raster_drawing.dart';
 import 'package:pennino/rich_text_controller.dart';
 import 'package:pennino/update_service.dart';
+import 'package:pennino/widget_refresh.dart';
 
 Note noteWithStroke() => Note(
       id: 'gesture-note',
@@ -909,6 +910,34 @@ void main() {
     expect(note.tasks, isEmpty, reason: 'there is one list now, in the text');
   });
 
+  testWidgets(
+      'the home-screen card is fed one picture per page, in the paper colour',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final note = emptyNote()
+      ..pageCount = 3
+      ..backgroundColor = 0xff202124;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: EditorPage(note: note),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final state = tester.state(find.byType(EditorPage)) as dynamic;
+    final pictures = await tester
+        .runAsync(() => state.renderPreviewPages() as Future<WidgetPictures>);
+    if (pictures == null) throw StateError('The pictures did not render');
+
+    expect(pictures.pages, hasLength(3), reason: 'one picture per page');
+    expect(pictures.background, 0xff202124,
+        reason: 'the card takes the note\'s paper colour');
+    expect(pictures.pages.toSet(), hasLength(1),
+        reason: 'three blank pages are the same picture');
+  });
+
   testWidgets('the highlighter starts in yellow', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1306,9 +1335,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final state = tester.state(find.byType(EditorPage)) as dynamic;
-    final blank =
-        await tester.runAsync(() => state.renderPreview() as Future<Uint8List>);
+    final blank = await tester
+        .runAsync(() => state.renderPreviewPages() as Future<WidgetPictures>);
     if (blank == null) throw StateError('Blank preview did not render');
+    final blankPng = blank.pages.first;
 
     await chooseTool(tester, 'Text');
     await tester.pumpAndSettle();
@@ -1319,12 +1349,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(documentText(tester), 'Hello widget preview');
 
-    final typed =
-        await tester.runAsync(() => state.renderPreview() as Future<Uint8List>);
+    final typed = await tester
+        .runAsync(() => state.renderPreviewPages() as Future<WidgetPictures>);
     if (typed == null) throw StateError('Typed preview did not render');
-    final ink = await previewDiff(tester, blank, typed);
+    final typedPng = typed.pages.first;
+    final ink = await previewDiff(tester, blankPng, typedPng);
     expect(ink.$1, greaterThan(0));
-    expect(typed, isNot(equals(blank)));
+    expect(typedPng, isNot(equals(blankPng)));
     // The picture is the phone's 400px page at 2x, and the document starts
     // at page (56, 52), so its ink belongs near (112, 104). Painting at any
     // other scale, or stretched to a different shape, would put it elsewhere.

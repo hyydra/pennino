@@ -42,6 +42,10 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/notes_widget_info" />
         </receiver>
+        <service
+            android:name=".NotesWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates"

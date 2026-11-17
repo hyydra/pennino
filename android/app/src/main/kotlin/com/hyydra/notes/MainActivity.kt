@@ -34,11 +34,21 @@ class MainActivity : FlutterActivity() {
                 }
                 try {
                     val title = call.argument<String>("title") ?: "Pennino"
-                    val base64 = call.argument<String>("png") ?: ""
-                    File(filesDir, "notes_widget.png")
-                        .writeBytes(Base64.decode(base64, Base64.DEFAULT))
-                    getSharedPreferences("notes_widget", Context.MODE_PRIVATE)
-                        .edit().putString("title", title).apply()
+                    val background = call.argument<Int>("background")
+                    val pages = call.argument<List<String>>("pages") ?: emptyList()
+                    // Replace the previous pictures: the files of pages the note
+                    // no longer has must not linger.
+                    filesDir.listFiles { file ->
+                        file.name.startsWith("notes_widget_page_")
+                    }?.forEach { it.delete() }
+                    pages.forEachIndexed { index, base64 ->
+                        File(filesDir, "notes_widget_page_$index.png")
+                            .writeBytes(Base64.decode(base64, Base64.DEFAULT))
+                    }
+                    val editor = getSharedPreferences("notes_widget", Context.MODE_PRIVATE)
+                        .edit().putString("title", title).putInt("pages", pages.size)
+                    if (background != null) editor.putInt("background", background)
+                    editor.apply()
                     NotesWidget.updateAll(this)
                     result.success(null)
                 } catch (error: Exception) {
