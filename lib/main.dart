@@ -568,6 +568,15 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncCurrentInBackground();
     });
+    // A new, empty note opens with the caret blinking at the start of the
+    // text block, so writing can begin without a tap.
+    if (widget.note.text.isEmpty &&
+        widget.note.strokes.isEmpty &&
+        widget.note.rasterTiles.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && tool == DrawTool.text) textFocusNode.requestFocus();
+      });
+    }
   }
 
   @override
@@ -2368,9 +2377,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     double height,
   ) {
     const updateHeight = 44.0;
-    const textRowHeight = 48.0;
+    const textRowHeight = 44.0;
     const strokeRowHeight = 52.0;
-    const inkRowHeight = 48.0;
+    const inkRowHeight = 44.0;
     const tasksHeaderHeight = 64.0;
     const canvasFloor = 44.0;
     final platform = Theme.of(context).platform;
@@ -2397,6 +2406,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     );
   }
 
+  /// Glyph size inside the bottom rows' 32 px round buttons.
+  static const double _toolbarIconSize = 20;
+
   Widget _drawingToolbar({required bool showStrokeRow}) {
     final tools = [
       (DrawTool.text, 'Text'),
@@ -2411,16 +2423,16 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     // Below that the row keeps its slots and slides sideways instead.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tight = constraints.maxWidth / (tools.length + 1) < 34;
+        final tight = constraints.maxWidth / (tools.length + 1) < 32;
         Widget slot(Widget child) =>
-            tight ? SizedBox(width: 38, child: child) : Expanded(child: child);
+            tight ? SizedBox(width: 34, child: child) : Expanded(child: child);
         final toolbar = SizedBox(
           key: Key(
             Theme.of(context).platform == TargetPlatform.android
                 ? 'android-drawing-toolbar'
                 : 'drawing-toolbar',
           ),
-          height: 48,
+          height: 44,
           child: Material(
             elevation: 0,
             color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -2433,6 +2445,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
             child: IconButtonTheme(
               data: IconButtonThemeData(
                 style: IconButton.styleFrom(
+                  iconSize: _toolbarIconSize,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 2,
                     vertical: 4,
@@ -2451,14 +2464,15 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                       ),
                       onPressed: () => _selectTool(entry.$1),
                       icon: _toolbarIconFrame(
-                        DrawingToolIcon(entry.$1),
+                        DrawingToolIcon(entry.$1, size: _toolbarIconSize),
                         selected: tool == entry.$1,
                       ),
                     )),
                   slot(PopupMenuButton<Color>(
                     tooltip: 'Drawing colour',
                     icon: _toolbarIconFrame(
-                      Icon(Icons.circle, color: _activeStrokeColor),
+                      Icon(Icons.circle,
+                          size: _toolbarIconSize, color: _activeStrokeColor),
                     ),
                     onSelected: _setActiveStrokeColor,
                     itemBuilder: (_) => _colorMenuItems(_activeStrokeColor),
@@ -2492,7 +2506,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     bool ring = false,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final requested = MediaQuery.sizeOf(context).width < 360 ? 32.0 : 36.0;
+    final requested = MediaQuery.sizeOf(context).width < 360 ? 28.0 : 32.0;
     // The chip only ever gets the room its slot can hand over, and a slot
     // that is narrower than the square asked for takes it out of the width
     // alone - seven of them across a phone left every chip 39.7 wide by 48
@@ -2577,127 +2591,118 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     Widget slot(Widget child) => Expanded(child: Center(child: child));
     return SizedBox(
       key: const Key('text-toolbar'),
-      height: 48,
+      height: 44,
       child: Material(
         elevation: 0,
         color: Theme.of(context).colorScheme.surfaceContainerLow,
         shape: Border(
           top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
         ),
-        child: Row(
-          children: [
-            slot(_toolbarIconFrame(
-              IconButton(
-                tooltip: 'Drawing tools',
-                onPressed: () => _selectTool(DrawTool.pen),
-                icon: const Icon(Icons.gesture),
-              ),
-              ring: true,
-            )),
-            slot(_toolbarIconFrame(PopupMenuButton<String>(
-              tooltip: 'Lists',
-              icon: const Icon(Icons.check_box_outlined),
-              onSelected: (value) {
-                if (value == 'check') _toggleLinePrefix('☐ ');
-                if (value == 'number') _toggleLinePrefix('1. ');
-                if (value == 'bullet') _toggleLinePrefix('• ');
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'check',
-                  child: Row(children: [
-                    Icon(Icons.check_box_outlined),
-                    SizedBox(width: 12),
-                    Text('Checklist'),
-                  ]),
+        child: IconButtonTheme(
+          data: IconButtonThemeData(
+            style: IconButton.styleFrom(
+              iconSize: _toolbarIconSize,
+              padding: EdgeInsets.zero,
+            ),
+          ),
+          child: Row(
+            children: [
+              slot(_toolbarIconFrame(
+                IconButton(
+                  tooltip: 'Drawing tools',
+                  onPressed: () => _selectTool(DrawTool.pen),
+                  icon: const Icon(Icons.gesture),
                 ),
-                PopupMenuItem(
-                  value: 'number',
-                  child: Row(children: [
-                    Icon(Icons.format_list_numbered),
-                    SizedBox(width: 12),
-                    Text('Numbered list'),
-                  ]),
+                ring: true,
+              )),
+              slot(_toolbarIconFrame(IconButton(
+                tooltip: 'Checklist',
+                onPressed: () => _toggleLinePrefix('☐ '),
+                icon: const Icon(Icons.check_box_outlined),
+              ))),
+              slot(_toolbarIconFrame(IconButton(
+                tooltip: 'Numbered list',
+                onPressed: () => _toggleLinePrefix('1. '),
+                icon: const Icon(Icons.format_list_numbered),
+              ))),
+              slot(_toolbarIconFrame(IconButton(
+                tooltip: 'Bulleted list',
+                onPressed: () => _toggleLinePrefix('• '),
+                icon: const Icon(Icons.format_list_bulleted),
+              ))),
+              slot(_toolbarIconFrame(PopupMenuButton<Color>(
+                tooltip: 'Text colour',
+                iconSize: _toolbarIconSize,
+                onSelected: _setTextColor,
+                icon: Icon(
+                  Icons.format_color_text,
+                  color: Color(documentFormat.color),
                 ),
-                PopupMenuItem(
-                  value: 'bullet',
-                  child: Row(children: [
-                    Icon(Icons.format_list_bulleted),
-                    SizedBox(width: 12),
-                    Text('Bulleted list'),
-                  ]),
-                ),
-              ],
-            ))),
-            slot(_toolbarIconFrame(PopupMenuButton<Color>(
-              tooltip: 'Text colour',
-              onSelected: _setTextColor,
-              icon: Icon(
-                Icons.format_color_text,
-                color: Color(documentFormat.color),
-              ),
-              itemBuilder: (_) => _colorMenuItems(Color(documentFormat.color)),
-            ))),
-            slot(_toolbarIconFrame(PopupMenuButton<double>(
-              tooltip: 'Font size',
-              onSelected: _setTextFontSize,
-              itemBuilder: (_) => [
-                for (final size in const [14.0, 18.0, 20.0, 24.0, 30.0, 36.0])
-                  PopupMenuItem(
-                    value: size,
-                    child: Row(children: [
-                      FontSizeMarkIcon(
-                        key: ValueKey('font-size-mark-tt-${size.round()}'),
+                itemBuilder: (_) =>
+                    _colorMenuItems(Color(documentFormat.color)),
+              ))),
+              slot(_toolbarIconFrame(PopupMenuButton<double>(
+                tooltip: 'Font size',
+                onSelected: _setTextFontSize,
+                itemBuilder: (_) => [
+                  for (final size in const [14.0, 18.0, 20.0, 24.0, 30.0, 36.0])
+                    PopupMenuItem(
+                      value: size,
+                      child: Row(children: [
+                        FontSizeMarkIcon(
+                          key: ValueKey('font-size-mark-tt-${size.round()}'),
+                        ),
+                        const SizedBox(width: 12),
+                        Text('${size.round()} pt'),
+                      ]),
+                    ),
+                ],
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${documentFormat.fontSize.round()}',
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
-                      const SizedBox(width: 12),
-                      Text('${size.round()} pt'),
+                      const Icon(Icons.arrow_drop_down, size: 16),
+                    ],
+                  ),
+                ),
+              ))),
+              slot(_toolbarIconFrame(IconButton(
+                tooltip: 'Bold',
+                isSelected: documentFormat.bold,
+                onPressed: _toggleTextBold,
+                icon: const Icon(Icons.format_bold),
+              ))),
+              slot(_toolbarIconFrame(PopupMenuButton<bool>(
+                tooltip: 'Indent',
+                iconSize: _toolbarIconSize,
+                icon: const Icon(Icons.format_indent_increase),
+                onSelected: _changeIndent,
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: false,
+                    child: Row(children: [
+                      Icon(Icons.format_indent_decrease),
+                      SizedBox(width: 12),
+                      Text('Decrease indent'),
                     ]),
                   ),
-              ],
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${documentFormat.fontSize.round()}',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const Icon(Icons.arrow_drop_down, size: 16),
-                  ],
-                ),
-              ),
-            ))),
-            slot(_toolbarIconFrame(IconButton(
-              tooltip: 'Bold',
-              isSelected: documentFormat.bold,
-              onPressed: _toggleTextBold,
-              icon: const Icon(Icons.format_bold),
-            ))),
-            slot(_toolbarIconFrame(PopupMenuButton<bool>(
-              tooltip: 'Indent',
-              icon: const Icon(Icons.format_indent_increase),
-              onSelected: _changeIndent,
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: false,
-                  child: Row(children: [
-                    Icon(Icons.format_indent_decrease),
-                    SizedBox(width: 12),
-                    Text('Decrease indent'),
-                  ]),
-                ),
-                PopupMenuItem(
-                  value: true,
-                  child: Row(children: [
-                    Icon(Icons.format_indent_increase),
-                    SizedBox(width: 12),
-                    Text('Increase indent'),
-                  ]),
-                ),
-              ],
-            ))),
-          ],
+                  PopupMenuItem(
+                    value: true,
+                    child: Row(children: [
+                      Icon(Icons.format_indent_increase),
+                      SizedBox(width: 12),
+                      Text('Increase indent'),
+                    ]),
+                  ),
+                ],
+              ))),
+            ],
+          ),
         ),
       ),
     );
