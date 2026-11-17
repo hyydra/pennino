@@ -431,7 +431,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   late final RichTextEditingController textController;
   late final FocusNode textFocusNode;
   TextDocumentFormat documentFormat = TextDocumentFormat();
-  late final TextEditingController taskController;
   final TransformationController transformationController =
       TransformationController();
 
@@ -457,7 +456,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   Stroke? activePreview;
   final List<Stroke> activeStrokeChunks = [];
   bool showText = true;
-  bool showTasks = false;
   bool applyingExternalChange = false;
   bool hasUnsavedChanges = false;
 
@@ -558,13 +556,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       ..addListener(_markChanged);
     titleController = TextEditingController(text: widget.note.title);
     titleController.addListener(_markChanged);
-    taskController = TextEditingController();
     applyingExternalChange = true;
     try {
       _loadDocumentIntoEditor(widget.note.text, widget.note.textFormat);
     } finally {
       applyingExternalChange = false;
     }
+    _foldTasksIntoDocument();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncCurrentInBackground();
     });
@@ -589,7 +587,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     titleController.dispose();
     textController.dispose();
     textFocusNode.dispose();
-    taskController.dispose();
     rasterDrawing.dispose();
     transformationController.dispose();
     canvasRepaint.dispose();
@@ -2185,24 +2182,24 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     _markChanged();
   }
 
-  void addTask() {
-    final text = taskController.text.trim();
-    if (text.isEmpty) return;
-    setState(() {
-      widget.note.tasks.add(TaskItem(text: text));
-      taskController.clear();
-    });
-    _markChanged();
-  }
-
-  void updateTask(int index, {bool? done, bool delete = false}) {
-    setState(() {
-      if (delete) {
-        widget.note.tasks.removeAt(index);
-      } else if (done != null) {
-        widget.note.tasks[index].done = done;
-      }
-    });
+  /// The separate task list is gone: a note's checklist is lines of the text.
+  /// Tasks a note still carries - from before, or from a device that has not
+  /// updated - are written into the document as checklist lines, so nothing
+  /// that was ticked or typed there is lost.
+  void _foldTasksIntoDocument() {
+    final tasks = widget.note.tasks;
+    if (tasks.isEmpty) return;
+    final lines = [
+      for (final task in tasks) '${task.done ? '☑' : '☐'} ${task.text}',
+    ];
+    final current = textController.text;
+    final separator = current.isEmpty || current.endsWith('\n') ? '' : '\n';
+    final text = '$current$separator${lines.join('\n')}';
+    widget.note.tasks = [];
+    textController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
     _markChanged();
   }
 
@@ -2249,6 +2246,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     } finally {
       applyingExternalChange = false;
     }
+    _foldTasksIntoDocument();
     _rasterLoadOperation = _loadRasterPages(
       rasterDrawing,
       widget.note.rasterTiles,
@@ -2373,14 +2371,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   /// needs them: the ink tools first, then the paper, then the rows that
   /// are a convenience - the stroke slider and, while typing, the ink row
   /// that already has its way back at the top of the text row.
-  ({bool inkRow, bool strokeRow, double tasksHeight}) _bottomBlock(
+  ({bool inkRow, bool strokeRow}) _bottomBlock(
     double height,
   ) {
     const updateHeight = 44.0;
     const textRowHeight = 44.0;
     const strokeRowHeight = 52.0;
     const inkRowHeight = 44.0;
-    const tasksHeaderHeight = 64.0;
     const canvasFloor = 44.0;
     final platform = Theme.of(context).platform;
     // The row the block has to share the window with that is not part of
@@ -2398,12 +2395,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     final strokeRow =
         toolWidths.containsKey(tool) && left >= strokeRowHeight + canvasFloor;
     if (strokeRow) left -= strokeRowHeight;
-    final tasks = left - canvasFloor;
-    return (
-      inkRow: inkRow,
-      strokeRow: strokeRow,
-      tasksHeight: tasks < tasksHeaderHeight ? 0.0 : math.min(220.0, tasks),
-    );
+    return (inkRow: inkRow, strokeRow: strokeRow);
   }
 
   /// Glyph size inside the bottom rows' 32 px round buttons.
@@ -3018,12 +3010,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                 tooltip: 'Note tools',
                 onSelected: (value) {
                   switch (value) {
-                    case 'text':
-                      setState(() => showText = !showText);
-                      return;
-                    case 'tasks':
-                      setState(() => showTasks = !showTasks);
-                      return;
                     case 'paper':
                       choosePaper();
                       return;
@@ -3036,31 +3022,12 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                     case 'sync-folder':
                       syncDrive(chooseFolder: true);
                       return;
-                    case 'update':
-                      _installAvailableUpdate();
-                      return;
                     case 'open-source':
                       _showOpenSourceNotice();
                       return;
                   }
                 },
                 itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: 'text',
-                    child: ListTile(
-                      leading: const DrawingToolIcon(DrawTool.text),
-                      title: Text(
-                          showText ? 'Hide typed text' : 'Show typed text'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'tasks',
-                    child: ListTile(
-                      leading: const Icon(Icons.checklist_outlined),
-                      title:
-                          Text(showTasks ? 'Hide checklist' : 'Show checklist'),
-                    ),
-                  ),
                   const PopupMenuItem(
                     value: 'paper',
                     child: ListTile(
@@ -3092,14 +3059,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                             : 'Choose Drive folder'),
                       ),
                     ),
-                  if (Platform.isAndroid || Platform.isWindows)
-                    const PopupMenuItem(
-                      value: 'update',
-                      child: ListTile(
-                        leading: Icon(Icons.system_update_outlined),
-                        title: Text('Check for updates'),
-                      ),
-                    ),
                   const PopupMenuItem(
                     value: 'open-source',
                     child: ListTile(
@@ -3121,68 +3080,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
               final block = _bottomBlock(body.maxHeight);
               return Column(
                 children: [
-                  if (showTasks && block.tasksHeight > 0)
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: block.tasksHeight),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: taskController,
-                                    onSubmitted: (_) => addTask(),
-                                    decoration: const InputDecoration(
-                                      hintText: 'Add a task',
-                                      isDense: true,
-                                      border: OutlineInputBorder(),
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Add task',
-                                  onPressed: addTask,
-                                  icon: const Icon(Icons.add_task),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Flexible(
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: widget.note.tasks.length,
-                              itemBuilder: (context, index) {
-                                final task = widget.note.tasks[index];
-                                return CheckboxListTile(
-                                  dense: true,
-                                  value: task.done,
-                                  onChanged: (value) =>
-                                      updateTask(index, done: value),
-                                  title: Text(
-                                    task.text,
-                                    style: task.done
-                                        ? const TextStyle(
-                                            decoration:
-                                                TextDecoration.lineThrough,
-                                          )
-                                        : null,
-                                  ),
-                                  secondary: IconButton(
-                                    tooltip: 'Delete task',
-                                    onPressed: () =>
-                                        updateTask(index, delete: true),
-                                    icon: const Icon(Icons.close),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, constraints) {

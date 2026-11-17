@@ -1,0 +1,1 @@
+The note menu is shorter: no more text toggle, separate checklist panel or manual update check (updates still show above the toolbar). Tasks from the old checklist panel are moved into the text as checklist lines.

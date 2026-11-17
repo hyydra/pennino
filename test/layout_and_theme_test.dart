@@ -10,10 +10,6 @@ Note layoutNote() => Note(
       updated: DateTime.utc(2026, 11, 10),
       text: 'one\ntwo\nthree\nfour',
       strokes: [],
-      tasks: [
-        for (var index = 0; index < 12; index++)
-          TaskItem(text: 'task ${index + 1}'),
-      ],
     );
 
 Future<void> openEditor(
@@ -48,13 +44,6 @@ Future<void> pickTool(WidgetTester tester, String tooltip) async {
   final byTip = find.byTooltip(tooltip);
   if (byTip.evaluate().isEmpty) return;
   await tester.tap(byTip, warnIfMissed: false);
-  await tester.pumpAndSettle();
-}
-
-Future<void> showChecklist(WidgetTester tester) async {
-  await tester.tap(find.byTooltip('Note tools'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text('Show checklist'));
   await tester.pumpAndSettle();
 }
 
@@ -155,38 +144,5 @@ void main() {
     await pickTool(tester, 'Text');
     expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('text-toolbar')), findsOneWidget);
-  });
-
-  testWidgets('the checklist keeps its place while there is room',
-      (tester) async {
-    await openEditor(tester, size: const Size(390, 844), keyboard: 290);
-    await showChecklist(tester);
-    expect(find.byTooltip('Add task'), findsOneWidget);
-    expect(find.byTooltip('Pen'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('a checklist under the keyboard yields the paper, not the pens',
-      (tester) async {
-    await openEditor(tester, size: const Size(800, 360), keyboard: 200);
-    await showChecklist(tester);
-    expect(tester.takeException(), isNull);
-    // The block cannot carry both, and the ink row is the one you draw
-    // with: the checklist waits for the keyboard to go away.
-    expect(find.byTooltip('Pen'), findsOneWidget);
-    expect(find.byTooltip('Add task'), findsNothing);
-  });
-
-  testWidgets('a checklist too tall for the room is capped, not spilled',
-      (tester) async {
-    await openEditor(tester, size: const Size(390, 844), keyboard: 500);
-    await showChecklist(tester);
-    expect(tester.takeException(), isNull);
-    // 288 of body, 116 of ink rows and a strip of paper leave the list
-    // less than its 220 ceiling; asking for all of it pushed the pens off
-    // the bottom of the window instead.
-    expect(find.byTooltip('Add task'), findsOneWidget);
-    final pens = tester.getRect(find.byTooltip('Pen'));
-    expect(pens.bottom, lessThanOrEqualTo(844 - 500));
   });
 }
