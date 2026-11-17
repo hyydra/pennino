@@ -339,22 +339,20 @@ class NoteStore {
     final primary = File('${directory.path}/$noteId.json');
     final temporary = File('${primary.path}.tmp');
     final backup = File('${primary.path}.bak');
-    final backupTemporary = File('${backup.path}.tmp');
 
     await temporary.writeAsString(encoded, flush: true);
     await afterSaveStage?.call(SaveStage.temporaryWritten);
     if (await primary.exists()) {
-      await backupTemporary.writeAsBytes(
-        await primary.readAsBytes(),
-        flush: true,
-      );
-      await afterSaveStage?.call(SaveStage.backupWritten);
+      // The payload being replaced becomes the backup by being renamed, not
+      // by reading and writing its bytes again: the new payload is already
+      // complete in the temporary file, and at every step below at least one
+      // complete copy is on disk, so an interruption loses nothing.
       if (await backup.exists()) {
         await backup.delete();
       }
-      await backupTemporary.rename(backup.path);
+      await afterSaveStage?.call(SaveStage.backupWritten);
+      await primary.rename(backup.path);
       await afterSaveStage?.call(SaveStage.backupPublished);
-      await primary.delete();
       await afterSaveStage?.call(SaveStage.primaryRemoved);
     }
 
