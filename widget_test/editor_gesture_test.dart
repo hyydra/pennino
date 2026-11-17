@@ -865,6 +865,49 @@ void main() {
     expect(documentText(tester), '', reason: 'the same button takes it off');
   });
 
+  testWidgets(
+      'the note menu has no text toggle, checklist panel or manual update',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: EditorPage(note: emptyNote()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Note tools'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Paper style'), findsOneWidget);
+    expect(find.text('Update home widget'), findsOneWidget);
+    expect(find.text('Open-source software'), findsOneWidget);
+    expect(find.text('Hide typed text'), findsNothing);
+    expect(find.text('Show checklist'), findsNothing);
+    expect(find.text('Hide checklist'), findsNothing);
+    expect(find.text('Check for updates'), findsNothing);
+  });
+
+  testWidgets('tasks a note still carries become checklist lines',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final note = emptyNote()
+      ..text = 'Shopping'
+      ..tasks = [TaskItem(text: 'milk'), TaskItem(text: 'eggs', done: true)];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: EditorPage(note: note),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(documentText(tester), 'Shopping\n☐ milk\n☑ eggs');
+    expect(note.tasks, isEmpty, reason: 'there is one list now, in the text');
+  });
+
   testWidgets('the highlighter starts in yellow', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
