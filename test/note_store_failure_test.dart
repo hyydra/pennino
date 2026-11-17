@@ -59,6 +59,26 @@ void main() {
     });
   }
 
+  test('a save keeps the replaced payload as the backup, without a copy file',
+      () async {
+    final directory = await tempDirectory('notes-backup-');
+    final store = NoteStore(directoryProvider: () async => directory);
+    await store.save(note('First', DateTime.utc(2026, 11, 9, 10)));
+    await store.save(note('Second', DateTime.utc(2026, 11, 9, 11)));
+    await store.save(note('Third', DateTime.utc(2026, 11, 9, 12)));
+
+    final names = directory.listSync().map((e) => e.uri.pathSegments.last);
+    expect(names, containsAll(['failure-note.json', 'failure-note.json.bak']));
+    expect(names.where((name) => name.endsWith('.tmp')), isEmpty);
+    final backup = File('${directory.path}/failure-note.json.bak');
+    expect(
+      await backup.readAsString(),
+      contains('Second'),
+      reason: 'the backup is the payload the last save replaced',
+    );
+    expect((await store.load()).single.title, 'Third');
+  });
+
   test('separate stores serialize writes to the same note in call order',
       () async {
     final directory = await tempDirectory('notes-queue-');

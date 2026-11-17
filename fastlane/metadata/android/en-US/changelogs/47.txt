@@ -1,0 +1,1 @@
+Saving a note is about a quarter faster (measured on a development machine), because the previous version is now kept as the backup by renaming it instead of copying it.
