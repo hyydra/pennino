@@ -7,6 +7,22 @@ those bytes; a build that is not listed here has not been checked that way.
 Releases before v0.4.27 are recorded in their handoff notes rather than here;
 the ledger starts with the first build after this habit was asked for.
 
+## 0.4.42+46 - 2026-11-17T19:27:01Z
+
+- Commit `61956b0`, annotated tag `v0.4.42` (tag object `01a3782`), release
+  run `44157662086` (success).
+- Android `Pennino-Android.apk`, 33,873,987 B, sha256
+  `016c899ab15d75044169570d2a0a4f6ee269bf98a9ae74b63fa8d165972c5ba5`.
+- Windows `Pennino-Windows-Setup.exe`, 10,912,646 B, sha256
+  `822f9b24e42a17cb31d08657449a6b7764a911e3ab28290a77c74ad55dab4554`.
+- Carries PR #89: the "Update home widget" menu item is gone and the card is
+  also fed once when a note opens; that call runs only on Android and was not
+  exercised on a device.
+- `unzip -l`: only `arm64-v8a` and `armeabi-v7a` libraries. `aapt2`: versionCode
+  46, versionName 0.4.42. Signer certificate SHA-256
+  `f86428c3bbd47b522613ef6707b3ca57b24c06dc219fc50cf72a68b6a0285978`,
+  unchanged.
+
 ## 0.4.41+45 - 2026-11-17T19:01:32Z
 
 - Commit `56fa215`, annotated tag `v0.4.41` (tag object `7348ffc`), release
@@ -123,9 +139,9 @@ the ledger starts with the first build after this habit was asked for.
   `ce58c99b3d5e96c04696f1880f5955bde9ea75f9e6fe2dbd35d613f0fb070a6b`.
 - Carries PR #77: one compact tool row, with text as the starting tool.
 
-Verified for 0.4.33-0.4.41: both assets were downloaded with `gh
+Verified for 0.4.33-0.4.42: both assets were downloaded with `gh
 release download` and their sizes and sha256 recomputed; all match the release
-API's digest. `aapt2` reports versionCode 37 to 45 for these builds and
+API's digest. `aapt2` reports versionCode 37 to 46 for these builds and
 `apksigner` the signer certificate SHA-256 `f86428c3bbd47b52...`
 (`f86428c3bbd47b522613ef6707b3ca57b24c06dc219fc50cf72a68b6a0285978`), unchanged.
 
