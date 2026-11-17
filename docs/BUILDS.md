@@ -7,6 +7,21 @@ those bytes; a build that is not listed here has not been checked that way.
 Releases before v0.4.27 are recorded in their handoff notes rather than here;
 the ledger starts with the first build after this habit was asked for.
 
+## 0.4.40+44 - 2026-11-17T08:51:50Z
+
+- Commit `c4557b0`, annotated tag `v0.4.40` (tag object `bb54710`), release
+  run `44049784518` (success).
+- Android `Pennino-Android.apk`, 34,087,223 B, sha256
+  `e79a07fedd9915d2dd7e8ccccce8b47b09c238230a10ae91e4ac172a85ff61a3`.
+- Windows `Pennino-Windows-Setup.exe`, 10,936,680 B, sha256
+  `8f535c40b6ad23656cfd4f5df964943245a0cf2f749bc6c3b9a75f471d6baa2d`.
+- Carries PR #85: smaller toolbar icons, separate Checklist, Numbered list and
+  Bulleted list buttons, and the caret blinking in a new empty note.
+- `unzip -l`: only `arm64-v8a` and `armeabi-v7a` libraries. `aapt2`: versionCode
+  44, versionName 0.4.40. Signer certificate SHA-256
+  `f86428c3bbd47b522613ef6707b3ca57b24c06dc219fc50cf72a68b6a0285978`,
+  unchanged.
+
 ## 0.4.39+43 - 2026-11-17T06:35:06Z
 
 - Commit `844c6da`, annotated tag `v0.4.39` (tag object `30c4893`), release
@@ -92,9 +107,9 @@ the ledger starts with the first build after this habit was asked for.
   `ce58c99b3d5e96c04696f1880f5955bde9ea75f9e6fe2dbd35d613f0fb070a6b`.
 - Carries PR #77: one compact tool row, with text as the starting tool.
 
-Verified for 0.4.33-0.4.39: both assets were downloaded with `gh
+Verified for 0.4.33-0.4.40: both assets were downloaded with `gh
 release download` and their sizes and sha256 recomputed; all match the release
-API's digest. `aapt2` reports versionCode 37 to 43 for these builds and
+API's digest. `aapt2` reports versionCode 37 to 44 for these builds and
 `apksigner` the signer certificate SHA-256 `f86428c3bbd47b52...`
 (`f86428c3bbd47b522613ef6707b3ca57b24c06dc219fc50cf72a68b6a0285978`), unchanged.
 
