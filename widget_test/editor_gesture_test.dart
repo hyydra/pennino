@@ -881,7 +881,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Paper style'), findsOneWidget);
-    expect(find.text('Update home widget'), findsOneWidget);
+    expect(find.text('Update home widget'), findsNothing,
+        reason: 'the home-screen card updates by itself');
     expect(find.text('Open-source software'), findsOneWidget);
     expect(find.text('Hide typed text'), findsNothing);
     expect(find.text('Show checklist'), findsNothing);

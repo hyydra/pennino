@@ -1,0 +1,1 @@
+The home-screen widget now updates by itself, so the Update home widget menu item is gone. It follows the note you are working on, including right after you open a note.

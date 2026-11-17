@@ -49,7 +49,7 @@ All versions and release notes are on the [releases page](https://github.com/hyy
 - Pennino uses the same visible `Pennino/notes` folder on every device and syncs both ways at startup and after each save. When the same note exists on both sides, the later update wins. No Google Cloud API key is needed.
 
 **Android home-screen widget**
-- Open a note, choose **Update home widget**, then add the Pennino widget from the launcher. It shows the top of the last note you pinned at the phone's page width, resizes from a compact card to a full page, and opens the launcher canvas when tapped. It is not a per-widget note picker yet.
+- Add the Pennino widget from the launcher; there is nothing to press. It follows the note you are working on: the picture is refreshed after saves, when the editor closes and when a note opens. It shows the top of the note at the phone's page width, resizes from a compact card to a full page, and opens the launcher canvas when tapped. It is not a per-widget note picker yet.
 
 **Updates**
 - The app checks for a newer release on every start and shows an update row above the toolbar only when one exists. Downloads are verified against the release's SHA-256 digest before they are handed to the installer.
