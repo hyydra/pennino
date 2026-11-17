@@ -104,9 +104,9 @@ void main() {
         reason: 'a $chip chip is a squashed rectangle, not a square',
       );
     }
-    // The design asks for 36 on a screen this wide; the slots used to hand
+    // The design asks for 32 on a screen this wide; the slots used to hand
     // the chip only what the button's own padding left over.
-    expect(chips.first.width, greaterThanOrEqualTo(34));
+    expect(chips.first.width, greaterThanOrEqualTo(30));
   });
 
   testWidgets('a narrow screen keeps every ink tool tappable', (tester) async {

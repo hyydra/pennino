@@ -804,6 +804,67 @@ void main() {
     );
   });
 
+  testWidgets('a new empty note opens with the caret in the text block',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: EditorPage(note: emptyNote()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(documentFocused(tester), isTrue);
+    expect(find.byKey(const Key('text-toolbar')), findsOneWidget);
+  });
+
+  testWidgets('a note that already has text does not grab the keyboard',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final note = emptyNote()..text = 'Already written';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: EditorPage(note: note),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(documentFocused(tester), isFalse);
+  });
+
+  testWidgets('checklist, numbered and bulleted lists are separate buttons',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: EditorPage(note: emptyNote()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Checklist'));
+    await tester.pumpAndSettle();
+    expect(documentText(tester), '☐ ');
+
+    await tester.tap(find.byTooltip('Numbered list'));
+    await tester.pumpAndSettle();
+    expect(documentText(tester), '1. ');
+
+    await tester.tap(find.byTooltip('Bulleted list'));
+    await tester.pumpAndSettle();
+    expect(documentText(tester), '• ');
+
+    await tester.tap(find.byTooltip('Bulleted list'));
+    await tester.pumpAndSettle();
+    expect(documentText(tester), '', reason: 'the same button takes it off');
+  });
+
   testWidgets('the highlighter starts in yellow', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1558,7 +1619,9 @@ void main() {
     expect(find.byKey(const Key('drawing-toolbar')), findsNothing);
     expect(find.byTooltip('Select'), findsNothing);
     expect(find.byTooltip('Add text block'), findsNothing);
-    expect(find.byTooltip('Lists'), findsOneWidget);
+    expect(find.byTooltip('Checklist'), findsOneWidget);
+    expect(find.byTooltip('Numbered list'), findsOneWidget);
+    expect(find.byTooltip('Bulleted list'), findsOneWidget);
     expect(find.byTooltip('Text colour'), findsOneWidget);
     expect(
       find.descendant(

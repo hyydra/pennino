@@ -1,0 +1,1 @@
+Smaller toolbar icons, separate Checklist, Numbered list and Bulleted list buttons, and a new empty note now opens with the caret blinking in the text.
