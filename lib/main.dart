@@ -564,7 +564,12 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     }
     _foldTasksIntoDocument();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncCurrentInBackground();
+      if (!mounted) return;
+      _syncCurrentInBackground();
+      // The home-screen card follows the note without a button: it is fed on
+      // every save and when the editor closes, and once when a note opens, so
+      // a card placed after the writing still gets its picture.
+      widgetRefresh.noteSaved();
     });
     // A new, empty note opens with the caret blinking at the start of the
     // text block, so writing can begin without a tap.
@@ -2056,53 +2061,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> pinWidget() async {
-    await autosave.saveNow();
-    if (saveFailed || hasUnsavedChanges) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Widget update stopped because the note is unsaved'),
-          ),
-        );
-      }
-      return;
-    }
-    if (!Platform.isAndroid) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Home screen widgets are Android-only')),
-        );
-      return;
-    }
-    try {
-      final png = await renderPreview();
-      await _sendPreviewToWidget(png);
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Widget updated. Add the Pennino widget from the Android home screen.',
-            ),
-          ),
-        );
-    } on PlatformException catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Widget error: ${e.message}')));
-    } catch (error) {
-      // A preview that never reached the channel leaves the widget showing
-      // whatever it showed before, which looks like a widget that does not
-      // work. Saying so is the only way the person can tell that apart from
-      // a launcher that was never given the note.
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Widget update failed: $error')),
-        );
-    }
-  }
-
   Future<void> choosePaper() async {
     var selectedColor = Color(widget.note.backgroundColor);
     var selectedPattern = PaperPattern.values.firstWhere(
@@ -3013,9 +2971,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                     case 'paper':
                       choosePaper();
                       return;
-                    case 'widget':
-                      pinWidget();
-                      return;
                     case 'sync':
                       syncDrive();
                       return;
@@ -3033,13 +2988,6 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                     child: ListTile(
                       leading: Icon(Icons.texture),
                       title: Text('Paper style'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'widget',
-                    child: ListTile(
-                      leading: Icon(Icons.widgets_outlined),
-                      title: Text('Update home widget'),
                     ),
                   ),
                   const PopupMenuItem(
