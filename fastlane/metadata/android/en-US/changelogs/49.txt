@@ -1,0 +1,1 @@
+The home-screen widget now scrolls through the pages of the note, and its background is the note's paper colour.

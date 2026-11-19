@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
-    android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/notes_widget_bg" android:padding="10dp">
-    <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="36dp"
-        android:text="Pennino" android:textStyle="bold" android:textColor="#243036" android:textSize="19sp"/>
-    <ImageView android:id="@+id/widget_image" android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:scaleType="fitStart" android:contentDescription="Handwritten note"/>
-</LinearLayout>
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <!-- The rounded card, tinted with the note's paper colour so the card is the
+         same colour as the page inside it. -->
+    <ImageView android:id="@+id/widget_bg" android:layout_width="match_parent"
+        android:layout_height="match_parent" android:scaleType="fitXY"
+        android:src="@drawable/notes_widget_bg" android:contentDescription="@null"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical" android:padding="10dp">
+        <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="36dp"
+            android:text="Pennino" android:textStyle="bold" android:textColor="#243036" android:textSize="19sp"
+            android:singleLine="true" android:ellipsize="end"/>
+        <!-- The note's pages, one picture each, scrolled with a finger. -->
+        <ListView android:id="@+id/widget_list" android:layout_width="match_parent"
+            android:layout_height="0dp" android:layout_weight="1"
+            android:divider="@null" android:dividerHeight="0dp" android:scrollbars="none"/>
+    </LinearLayout>
+</FrameLayout>

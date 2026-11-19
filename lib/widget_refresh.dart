@@ -13,16 +13,16 @@ import 'dart:typed_data';
 /// debounce, the publishing itself is a single drain that can never overlap
 /// itself, and it asks the platform whether a card actually exists before it
 /// renders anything.
-class WidgetRefreshScheduler {
+class WidgetRefreshScheduler<T> {
   /// Whether any widget instance of this app is placed. Checked for every
   /// publish, because a card is added and removed between saves.
   final Future<bool> Function() hasWidgets;
 
   /// Flattens the note into the picture the card shows.
-  final Future<Uint8List> Function() render;
+  final Future<T> Function() render;
 
   /// Hands that picture to the platform.
-  final Future<void> Function(Uint8List png) publish;
+  final Future<void> Function(T picture) publish;
 
   /// False where there is no card to update; the widget is Android-only.
   final bool Function() isEnabled;
@@ -95,12 +95,12 @@ class WidgetRefreshScheduler {
   Future<void> _publishOnce() async {
     try {
       if (!await hasWidgets()) return;
-      final png = await render();
+      final picture = await render();
       // The editor can close while a page is being decoded, and the picture
       // it was made for no longer describes anything the person is looking
       // at. Reporting into a dead context would be the worse half of this.
       if (_disposed) return;
-      await publish(png);
+      await publish(picture);
     } catch (error) {
       onError?.call(error);
     }
@@ -108,3 +108,13 @@ class WidgetRefreshScheduler {
 }
 
 bool _always() => true;
+
+/// What the home-screen card is fed: one picture per page of the note, top to
+/// bottom, so the card can scroll through them, and the paper colour so the
+/// card can be the same colour around them.
+class WidgetPictures {
+  final List<Uint8List> pages;
+  final int background;
+
+  const WidgetPictures(this.pages, this.background);
+}
