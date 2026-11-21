@@ -864,7 +864,7 @@ class RasterDrawingStore {
             // tiles have no paper to hide behind, so the bake has to drop that
             // ink the same way; fading it over the mark instead would leave
             // the committed stroke sharper than the one being drawn.
-            ..blendMode = pass.$2 >= 1.0 ? BlendMode.src : BlendMode.srcOver,
+            ..blendMode = pass.$2 >= 1.0 ? BlendMode.src : BlendMode.plus,
         );
         canvas.restore();
       }

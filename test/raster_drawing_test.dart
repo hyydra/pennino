@@ -1013,6 +1013,43 @@ void main() {
       }
     });
 
+    test('blurring the middle of a solid block does not thin it out', () async {
+      final store = RasterDrawingStore();
+      try {
+        await store.addStroke(
+          Stroke(
+            points: const [CanvasPoint(20, 150), CanvasPoint(280, 150)],
+            color: 0xff000000,
+            width: 120,
+            highlight: false,
+          ),
+          canvasWidth: 300,
+          canvasPageHeight: 300,
+          pageCount: 1,
+        );
+        await store.addStroke(
+          Stroke(
+            points: const [CanvasPoint(150, 150)],
+            color: 0x00000000,
+            width: 44,
+            highlight: false,
+            blur: true,
+          ),
+          canvasWidth: 300,
+          canvasPageHeight: 300,
+          pageCount: 1,
+        );
+        // Far from the block's own edge there is nothing to soften, so every
+        // pixel of the mark has to stay as solid as it was.
+        for (final y in [125, 135, 150, 165, 175]) {
+          expect(await alphaAtStore(store, 0, 150, y), greaterThanOrEqualTo(250),
+              reason: 'row $y thinned out');
+        }
+      } finally {
+        store.dispose();
+      }
+    });
+
     test('a committed blur leaves no full-strength ink inside its core', () async {
       final store = await blurredThickInk();
       try {
