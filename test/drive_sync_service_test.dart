@@ -578,4 +578,49 @@ void main() {
     expect(await File('${directory.parent.path}/escape.json').exists(), isFalse,
         reason: 'an unsafe remote id cannot write outside the note folder');
   });
+  test('unrelated JSON in the Drive folder is ignored, not reported', () async {
+    final directory = await Directory.systemTemp.createTemp('drive-sync-');
+    addTearDown(() => directory.delete(recursive: true));
+    final store = NoteStore(directoryProvider: () async => directory);
+    final good = note('good', 'Good', DateTime.utc(2026, 11, 11, 9));
+    final backend = FakeSyncFolderBackend()
+      ..files = {
+        'good.json': jsonEncode(good.toJson()),
+        'manifest-1.json': jsonEncode({'version': 2, 'data_files': []}),
+        'list.json': '[1, 2]',
+        'broken.json': '{damaged',
+      };
+    final service = DriveSyncService(store: store, backend: backend);
+
+    final result = await service.sync();
+
+    expect(result?.noteCount, 1);
+    expect(result?.skippedRemoteFiles, 1,
+        reason: 'only the damaged file is worth warning about');
+    expect(backend.files['manifest-1.json'], isNotNull);
+  });
+  test('Windows backend also reads duplicate "notes (N)" Drive folders',
+      () async {
+    if (!Platform.isWindows) return;
+    final root = await Directory.systemTemp.createTemp('drive-root-');
+    final local = await Directory.systemTemp.createTemp('drive-local-');
+    addTearDown(() => root.delete(recursive: true));
+    addTearDown(() => local.delete(recursive: true));
+    await Directory('${root.path}/Pennino/notes').create(recursive: true);
+    await Directory('${root.path}/Pennino/notes (3)').create(recursive: true);
+    await File('${root.path}/Pennino/notes/a.json').writeAsString('{"id":"a"}');
+    await File('${root.path}/Pennino/notes (3)/a.json')
+        .writeAsString('{"id":"a","v":2}');
+    await File('${root.path}/Pennino/notes (3)/b.json').writeAsString('{"id":"b"}');
+    await File('${local.path}/.sync-folder').writeAsString(root.path);
+    final backend = WindowsSyncFolderBackend(localNoteDirectory: () async => local);
+
+    expect(await backend.configure(chooseFolder: false), isTrue);
+    final files = await backend.readFiles();
+
+    expect(files['a.json'], '{"id":"a"}');
+    expect(files['notes (3)/a.json'], '{"id":"a","v":2}',
+        reason: 'a same-named copy keeps its own key');
+    expect(files['notes (3)/b.json'], '{"id":"b"}');
+  });
 }

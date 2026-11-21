@@ -17,6 +17,7 @@ import 'list_continuation.dart';
 import 'canvas_editing.dart';
 import 'canvas_painter.dart';
 import 'drive_sync_service.dart';
+import 'sync_log.dart';
 import 'note_data.dart';
 import 'note_storage.dart';
 import 'note_store.dart';
@@ -2321,7 +2322,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Drive sync error: $error')),
+          SnackBar(
+            content: Text(
+              SyncLog.path == null
+                  ? 'Drive sync error: $error'
+                  : 'Drive sync error: $error (details in ${SyncLog.path})',
+            ),
+          ),
         );
       }
     }
