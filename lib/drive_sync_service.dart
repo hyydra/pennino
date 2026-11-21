@@ -296,22 +296,63 @@ class WindowsSyncFolderBackend implements SyncFolderBackend {
   Directory get _configuredFolder =>
       _folder ?? (throw StateError('Sync folder is not configured'));
 
+  /// Drive lets two folders share a name, and shows the extra ones as
+  /// `notes (1)`, `notes (3)`. A phone that created its own `notes` folder
+  /// leaves its notes there, invisible to a reader of `notes` alone, so those
+  /// siblings are read too (never written to or deleted from).
+  static final RegExp _duplicateNotesFolder = RegExp(
+    r'^notes \(\d+\)$',
+    caseSensitive: false,
+  );
+
+  Future<List<Directory>> _duplicateFolders() async {
+    final parent = _configuredFolder.parent;
+    final found = <Directory>[];
+    await for (final entry in parent.list()) {
+      if (entry is! Directory) continue;
+      final name = entry.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      if (_duplicateNotesFolder.hasMatch(name)) found.add(entry);
+    }
+    found.sort((a, b) => a.path.compareTo(b.path));
+    return found;
+  }
+
   @override
   Future<Map<String, String>> readFiles() async {
     final files = <String, String>{};
     final root = _root ?? _configuredFolder;
-    for (final directory in <Directory>{root, _configuredFolder}) {
+    Future<void> readDirectory(Directory directory, {String? prefix}) async {
       await for (final entry in directory.list()) {
-        if (entry is File && entry.path.toLowerCase().endsWith('.json')) {
-          final name = entry.uri.pathSegments.last;
-          try {
-            files[name] = await entry.readAsString();
-          } catch (error, stackTrace) {
-            SyncLog.error('read ${entry.path}', error, stackTrace);
-            rethrow;
+        if (entry is! File || !entry.path.toLowerCase().endsWith('.json')) {
+          continue;
+        }
+        final name = entry.uri.pathSegments.last;
+        try {
+          final content = await entry.readAsString();
+          if (prefix == null) {
+            files[name] = content;
+          } else if (name.endsWith(NoteTombstone.fileSuffix)) {
+            // A tombstone must keep its plain name to be recognised.
+            files.putIfAbsent(name, () => content);
+          } else {
+            // Same file name in several folders: keep each copy under its own
+            // key so the newest edit wins instead of whichever was read last.
+            files['$prefix/$name'] = content;
           }
+        } catch (error, stackTrace) {
+          SyncLog.error('read ${entry.path}', error, stackTrace);
+          rethrow;
         }
       }
+    }
+
+    for (final directory in <Directory>{root, _configuredFolder}) {
+      await readDirectory(directory);
+    }
+    for (final duplicate in await _duplicateFolders()) {
+      final prefix = duplicate.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      SyncLog.log('also reading duplicate Drive folder $prefix');
+      await readDirectory(duplicate, prefix: prefix);
     }
     return files;
   }
