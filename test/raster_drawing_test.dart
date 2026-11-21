@@ -966,4 +966,64 @@ void main() {
     expect(history.canRedo, isFalse);
     expect(history.takeRedo(), isNull);
   });
+  group('blur across tiles and over thick ink', () {
+    Future<RasterDrawingStore> blurredThickInk() async {
+      final store = RasterDrawingStore();
+      await store.addStroke(
+        Stroke(
+          points: const [CanvasPoint(50, 150), CanvasPoint(580, 150)],
+          color: 0xff000000,
+          width: 30,
+          highlight: false,
+        ),
+        canvasWidth: 600,
+        canvasPageHeight: 300,
+        pageCount: 1,
+      );
+      await store.addStroke(
+        Stroke(
+          points: const [CanvasPoint(150, 150), CanvasPoint(580, 150)],
+          color: 0x00000000,
+          width: 44,
+          highlight: false,
+          blur: true,
+        ),
+        canvasWidth: 600,
+        canvasPageHeight: 300,
+        pageCount: 1,
+      );
+      return store;
+    }
+
+    test('there is no seam where the blur crosses a tile boundary', () async {
+      final store = await blurredThickInk();
+      try {
+        final boundary = RasterDrawingStore.tileSize;
+        for (final y in [135, 145, 150, 160]) {
+          final left = await alphaAtStore(store, 0, boundary - 1, y);
+          final right = await alphaAtStore(store, 0, boundary, y);
+          expect(
+            (left - right).abs(),
+            lessThanOrEqualTo(6),
+            reason: 'row $y steps from $left to $right at the tile boundary',
+          );
+        }
+      } finally {
+        store.dispose();
+      }
+    });
+
+    test('a committed blur leaves no full-strength ink inside its core', () async {
+      final store = await blurredThickInk();
+      try {
+        // 12 px from the path is inside the brush. The ink there was 255 and
+        // the softened copy is fainter, so anything still at 255 is sharp ink
+        // that was covered rather than mixed.
+        expect(await alphaAtStore(store, 0, 400, 138), lessThan(250));
+        expect(await alphaAtStore(store, 0, 400, 162), lessThan(250));
+      } finally {
+        store.dispose();
+      }
+    });
+  });
 }
