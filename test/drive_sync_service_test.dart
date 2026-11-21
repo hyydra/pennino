@@ -578,4 +578,25 @@ void main() {
     expect(await File('${directory.parent.path}/escape.json').exists(), isFalse,
         reason: 'an unsafe remote id cannot write outside the note folder');
   });
+  test('unrelated JSON in the Drive folder is ignored, not reported', () async {
+    final directory = await Directory.systemTemp.createTemp('drive-sync-');
+    addTearDown(() => directory.delete(recursive: true));
+    final store = NoteStore(directoryProvider: () async => directory);
+    final good = note('good', 'Good', DateTime.utc(2026, 11, 11, 9));
+    final backend = FakeSyncFolderBackend()
+      ..files = {
+        'good.json': jsonEncode(good.toJson()),
+        'manifest-1.json': jsonEncode({'version': 2, 'data_files': []}),
+        'list.json': '[1, 2]',
+        'broken.json': '{damaged',
+      };
+    final service = DriveSyncService(store: store, backend: backend);
+
+    final result = await service.sync();
+
+    expect(result?.noteCount, 1);
+    expect(result?.skippedRemoteFiles, 1,
+        reason: 'only the damaged file is worth warning about');
+    expect(backend.files['manifest-1.json'], isNotNull);
+  });
 }

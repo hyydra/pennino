@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'note_data.dart';
 import 'note_storage.dart';
 import 'note_store.dart';
+import 'sync_log.dart';
 
 const _appFolderName = 'Pennino';
 const _notesFolderName = 'notes';
@@ -45,6 +46,19 @@ Note? _decodeNote(String content) {
   } catch (_) {
     // Unrelated or damaged JSON files are left untouched for recovery.
     return null;
+  }
+}
+
+/// True for a file that is well-formed JSON but plainly not a Pennino note,
+/// such as a Drive export manifest sitting in the same folder. Those are not
+/// "unreadable", so they must not trigger the skipped-files warning. Damaged
+/// JSON and anything that looks like a note (it has an `id`) still count.
+bool _isForeignJson(String content) {
+  try {
+    final decoded = jsonDecode(content);
+    return decoded is! Map || decoded['id'] is! String;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -162,9 +176,7 @@ SyncFolderBackend? createPlatformSyncBackend({
 }) {
   if (Platform.isAndroid) return AndroidSyncFolderBackend();
   if (Platform.isWindows) {
-    return WindowsSyncFolderBackend(
-      localNoteDirectory: localNoteDirectory,
-    );
+    return WindowsSyncFolderBackend(localNoteDirectory: localNoteDirectory);
   }
   return null;
 }
@@ -178,10 +190,11 @@ DriveSyncService? _sharedSyncService;
 /// their read-modify-write of the same folder and can lose updates. Every
 /// [NoteStore] over the same directory shares one static write queue, so the
 /// store captured here is interchangeable with any other.
-DriveSyncService sharedSyncService(NoteStore store) => _sharedSyncService ??=
-    DriveSyncService(
+DriveSyncService sharedSyncService(NoteStore store) =>
+    _sharedSyncService ??= DriveSyncService(
       store: store,
       backend: createPlatformSyncBackend(localNoteDirectory: noteDirectory),
+      logDirectory: noteDirectory,
     );
 
 class AndroidSyncFolderBackend implements SyncFolderBackend {
@@ -247,9 +260,16 @@ class WindowsSyncFolderBackend implements SyncFolderBackend {
         await marker.writeAsString(root.path, flush: true);
       }
     }
-    if (root == null) return false;
+    if (root == null) {
+      SyncLog.log(
+        'windows configure: no usable folder '
+        '(chooseFolder=$chooseFolder, marker exists=${await marker.exists()})',
+      );
+      return false;
+    }
     _root = root;
     _folder = await _canonicalNotesFolder(root);
+    SyncLog.log('windows configure: root=${root.path} notes=${_folder!.path}');
     return true;
   }
 
@@ -283,7 +303,13 @@ class WindowsSyncFolderBackend implements SyncFolderBackend {
     for (final directory in <Directory>{root, _configuredFolder}) {
       await for (final entry in directory.list()) {
         if (entry is File && entry.path.toLowerCase().endsWith('.json')) {
-          files[entry.uri.pathSegments.last] = await entry.readAsString();
+          final name = entry.uri.pathSegments.last;
+          try {
+            files[name] = await entry.readAsString();
+          } catch (error, stackTrace) {
+            SyncLog.error('read ${entry.path}', error, stackTrace);
+            rethrow;
+          }
         }
       }
     }
@@ -293,6 +319,7 @@ class WindowsSyncFolderBackend implements SyncFolderBackend {
   @override
   Future<void> writeFiles(Map<String, String> files) async {
     for (final entry in files.entries) {
+      SyncLog.log('windows write ${entry.key} (${entry.value.length} chars)');
       final target = File(
         '${_configuredFolder.path}${Platform.pathSeparator}${entry.key}',
       );
@@ -318,9 +345,7 @@ class WindowsSyncFolderBackend implements SyncFolderBackend {
     if (root != null) directories.add(root);
     for (final name in names) {
       for (final directory in directories) {
-        final file = File(
-          '${directory.path}${Platform.pathSeparator}$name',
-        );
+        final file = File('${directory.path}${Platform.pathSeparator}$name');
         if (await file.exists()) await file.delete();
       }
     }
@@ -342,7 +367,14 @@ class DriveSyncService {
   final SyncFolderBackend? backend;
   Future<void> _tail = Future<void>.value();
 
-  DriveSyncService({required this.store, required this.backend});
+  /// Where `sync.log` goes. Null leaves logging off, as it is in tests.
+  final Future<Directory> Function()? logDirectory;
+
+  DriveSyncService({
+    required this.store,
+    required this.backend,
+    this.logDirectory,
+  });
 
   /// Starts a best-effort sync without making local loading or saving wait for
   /// a cloud provider. Manual sync continues to use [sync] so it can report a
@@ -371,13 +403,26 @@ class DriveSyncService {
     final completer = Completer<DriveSyncResult?>();
     _tail = _tail.catchError((_) {}).then((_) async {
       try {
-        completer.complete(
-          await _sync(
-            chooseFolder: chooseFolder,
-            currentNoteId: currentNoteId,
-          ),
+        if (!SyncLog.isEnabled && logDirectory != null) {
+          try {
+            SyncLog.enable(await logDirectory!());
+          } catch (_) {}
+        }
+        SyncLog.log(
+          'sync start chooseFolder=$chooseFolder '
+          'currentNote=$currentNoteId backend=${backend.runtimeType}',
         );
+        final result = await _sync(
+          chooseFolder: chooseFolder,
+          currentNoteId: currentNoteId,
+        );
+        SyncLog.log(
+          'sync end status=${result?.status.name} '
+          'notes=${result?.noteCount} skipped=${result?.skippedRemoteFiles}',
+        );
+        completer.complete(result);
       } catch (error, stackTrace) {
+        SyncLog.error('sync failed', error, stackTrace);
         completer.completeError(error, stackTrace);
       }
     });
@@ -402,6 +447,10 @@ class DriveSyncService {
     }
 
     final remoteRaw = await selectedBackend.readFiles();
+    SyncLog.log(
+      'read ${remoteRaw.length} json file(s): '
+      '${(remoteRaw.entries.map((e) => '${e.key} (${e.value.length} chars)').toList()..sort()).join(', ')}',
+    );
     final remoteNotePayloads = <String, String>{};
     final remoteTombstones = <String, NoteTombstone>{};
     remoteRaw.forEach((name, content) {
@@ -426,7 +475,24 @@ class DriveSyncService {
     final remoteNotes = await Isolate.run(
       () => _decodeRemoteNotes(remoteNotePayloads),
     );
-    var skipped = remoteNotePayloads.length - remoteNotes.length;
+    final decodedNames = {for (final found in remoteNotes) found.name};
+    final foreign = <String>[
+      for (final entry in remoteNotePayloads.entries)
+        if (!decodedNames.contains(entry.key) && _isForeignJson(entry.value))
+          entry.key,
+    ];
+    var skipped =
+        remoteNotePayloads.length - remoteNotes.length - foreign.length;
+    if (foreign.isNotEmpty) {
+      SyncLog.log('ignored non-note JSON: ${(foreign..sort()).join(', ')}');
+    }
+    if (skipped > 0) {
+      final decoded = decodedNames;
+      SyncLog.log(
+        'not a Pennino note, left untouched: '
+        '${(remoteNotePayloads.keys.where((n) => !decoded.contains(n)).toList()..sort()).join(', ')}',
+      );
+    }
 
     final deletions = <String>{};
     for (final found in remoteNotes) {
@@ -461,10 +527,11 @@ class DriveSyncService {
       if (local == null || remote.updated.isAfter(local.updated)) {
         try {
           merged[remote.id] = await store.saveIfNewer(remote);
-        } catch (_) {
+        } catch (error, stackTrace) {
           // One unwritable remote note must not abort the rest of the sync.
           merged.remove(remote.id);
           skipped++;
+          SyncLog.error('store remote note ${found.name}', error, stackTrace);
         }
       }
     }
@@ -510,6 +577,10 @@ class DriveSyncService {
       for (final entry in encoded.entries)
         if (remoteRaw[entry.key] != entry.value) entry.key: entry.value,
     };
+    SyncLog.log(
+      'upload ${pending.length}: ${pending.keys.join(', ')}; '
+      'delete ${deletions.length}: ${deletions.join(', ')}',
+    );
     if (pending.isNotEmpty) await selectedBackend.writeFiles(pending);
     if (deletions.isNotEmpty) {
       await selectedBackend.deleteFiles(deletions.toList());
