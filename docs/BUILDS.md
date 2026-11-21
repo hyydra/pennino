@@ -7,6 +7,20 @@ those bytes; a build that is not listed here has not been checked that way.
 Releases before v0.4.27 are recorded in their handoff notes rather than here;
 the ledger starts with the first build after this habit was asked for.
 
+## 0.4.46+50 - 2026-11-21T20:06:56Z
+
+- Commit `edeb51a`, annotated tag `v0.4.46` (tag object `f5a2833`), release
+  run `44944059262` (success).
+- Android `Pennino-Android.apk`, 33,890,371 B, sha256
+  `5d580cf267289dd8cb3c67b777a3cc40054b3c9dd85789de32429e0563b42b5e`.
+- Windows `Pennino-Windows-Setup.exe`, 10,921,971 B, sha256
+  `9ada987e8bddc8c9efacebaff2c75c00c579119c849b70666b7c6af97851c31f`.
+- Carries PR #100: Check for updates is back in the note menu.
+- `unzip -l`: only `arm64-v8a` and `armeabi-v7a` libraries. `aapt2`: versionCode
+  50, versionName 0.4.46. Signer certificate SHA-256
+  `f86428c3bbd47b522613ef6707b3ca57b24c06dc219fc50cf72a68b6a0285978`,
+  unchanged.
+
 ## 0.4.45+49 - 2026-11-21T19:27:12Z
 
 - Commit `9469e6b`, annotated tag `v0.4.45` (tag object `f391e21`), release
