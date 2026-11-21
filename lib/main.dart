@@ -430,7 +430,7 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
   /// Keeps the home-screen card in step with the note rather than with the
   /// button, so a card placed before the first pin is not a permanent
   /// placeholder.
-  late final WidgetRefreshScheduler widgetRefresh;
+  late final WidgetRefreshScheduler<WidgetPictures> widgetRefresh;
   bool widgetRefreshWarned = false;
   late final TextEditingController titleController;
   late final RichTextEditingController textController;
@@ -546,9 +546,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
       },
       onStatusChanged: _onAutosaveStatus,
     );
-    widgetRefresh = WidgetRefreshScheduler(
+    widgetRefresh = WidgetRefreshScheduler<WidgetPictures>(
       hasWidgets: _hasNoteWidgets,
-      render: renderPreview,
+      render: renderPreviewPages,
       publish: _sendPreviewToWidget,
       isEnabled: () => Platform.isAndroid,
       onError: _onWidgetRefreshFailed,
@@ -1989,32 +1989,49 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
               ? Icons.save
               : Icons.check;
 
-  /// The home-screen picture: the top of the first page, exactly the phone's
-  /// page width wide, at one scale so nothing is stretched. The widget shows
-  /// it top-left aligned, so its width always matches the phone's.
-  Future<Uint8List> renderPreview() async {
+  /// The most pages a card is given; each is a picture the launcher keeps.
+  static const int _widgetPageLimit = 6;
+
+  /// One picture per page, from the top of the note down, each exactly the
+  /// phone's page width at 2x and one scale, so the card can scroll through
+  /// the note and the content matches the width of the phone.
+  Future<WidgetPictures> renderPreviewPages() async {
+    final count = math.min(widget.note.pageCount, _widgetPageLimit);
+    final pages = <Uint8List>[];
+    for (var page = 0; page < count; page++) {
+      pages.add(await _renderPreviewPage(page));
+    }
+    return WidgetPictures(pages, widget.note.backgroundColor);
+  }
+
+  Future<Uint8List> _renderPreviewPage(int page) async {
+    const scale = 800 / mobilePageWidth;
+    final height = math.max(1.0, canvasPageHeight);
+    final pageSize = Size(mobilePageWidth, height);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    const size = Size(800, 1200);
-    const scale = 800 / mobilePageWidth;
-    const pageSize = Size(mobilePageWidth, 1200 / scale);
     canvas.scale(scale, scale);
+    canvas.clipRect(Offset.zero & pageSize);
+    final pattern = PaperPattern.values.firstWhere(
+      (item) => item.name == widget.note.backgroundPattern,
+      orElse: () => PaperPattern.lined,
+    );
+    // Paper first, then the page's tiles in the page's own coordinates, then
+    // everything that lives in note coordinates - legacy strokes and the
+    // document - shifted up by the pages above this one.
+    StrokePainter(
+      const [],
+      null,
+      background: Color(widget.note.backgroundColor),
+      pattern: pattern,
+    ).paint(canvas, pageSize);
+    await rasterDrawing.paintPagePreview(canvas, page);
+    canvas.translate(0, -page * height);
     StrokePainter(
       widget.note.strokes,
       null,
-      background: Color(widget.note.backgroundColor),
-      pattern: PaperPattern.values.firstWhere(
-        (item) => item.name == widget.note.backgroundPattern,
-        orElse: () => PaperPattern.lined,
-      ),
-    ).paint(canvas, pageSize);
-    // The preview image is painted off the widget tree, so nothing asks the
-    // store for the tiles it is about to draw. The store decodes the page it
-    // picks itself, and it picks the first page that has ink: page zero is
-    // blank paper for a note whose strokes start further down, and that
-    // preview is what a home screen widget then shows.
-    await rasterDrawing.paintPreview(canvas, pageSize, scale: 1);
-    // The document lives in canvas coordinates, which the picture now shares.
+      paintBackground: false,
+    ).paint(canvas, Size(mobilePageWidth, height * widget.note.pageCount));
     final document = _layoutDocument();
     if (document.width > 0 && document.height > 0) {
       document.paint(
@@ -2028,8 +2045,8 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     document.dispose();
     final picture = recorder.endRecording();
     final image = await picture.toImage(
-      size.width.toInt(),
-      size.height.toInt(),
+      (mobilePageWidth * scale).round(),
+      (height * scale).round(),
     );
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     image.dispose();
@@ -2047,10 +2064,13 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
     return (count ?? 0) > 0;
   }
 
-  Future<void> _sendPreviewToWidget(Uint8List png) =>
+  Future<void> _sendPreviewToWidget(WidgetPictures pictures) =>
       widgetChannel.invokeMethod<void>('setNote', {
         'title': widget.note.title,
-        'png': base64Encode(png),
+        // The platform channel carries 32-bit ints; an ARGB colour such as
+        // 0xfffffdf7 is only that after being read as signed.
+        'background': pictures.background.toSigned(32),
+        'pages': [for (final page in pictures.pages) base64Encode(page)],
       });
 
   /// One quiet complaint per editor, not one per save.
