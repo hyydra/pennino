@@ -1,0 +1,1 @@
+The note menu has Check for updates again, so you can look for a new version by hand.

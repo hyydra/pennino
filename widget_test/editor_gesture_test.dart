@@ -866,7 +866,7 @@ void main() {
   });
 
   testWidgets(
-      'the note menu has no text toggle, checklist panel or manual update',
+      'the note menu has no text toggle or checklist panel, but can check for updates',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -887,7 +887,13 @@ void main() {
     expect(find.text('Hide typed text'), findsNothing);
     expect(find.text('Show checklist'), findsNothing);
     expect(find.text('Hide checklist'), findsNothing);
-    expect(find.text('Check for updates'), findsNothing);
+    expect(
+      find.text('Check for updates'),
+      Platform.isAndroid || Platform.isWindows
+          ? findsOneWidget
+          : findsNothing,
+      reason: 'the platforms that can install an update can also ask for one',
+    );
   });
 
   testWidgets('tasks a note still carries become checklist lines',

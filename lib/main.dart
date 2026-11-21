@@ -2988,6 +2988,9 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                     case 'sync-folder':
                       syncDrive(chooseFolder: true);
                       return;
+                    case 'update':
+                      _installAvailableUpdate();
+                      return;
                     case 'open-source':
                       _showOpenSourceNotice();
                       return;
@@ -3016,6 +3019,14 @@ class _EditorPageState extends State<EditorPage> with WidgetsBindingObserver {
                         title: Text(Platform.isAndroid
                             ? 'Choose Google Drive folder'
                             : 'Choose Drive folder'),
+                      ),
+                    ),
+                  if (Platform.isAndroid || Platform.isWindows)
+                    const PopupMenuItem(
+                      value: 'update',
+                      child: ListTile(
+                        leading: Icon(Icons.system_update_outlined),
+                        title: Text('Check for updates'),
                       ),
                     ),
                   const PopupMenuItem(
