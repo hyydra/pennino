@@ -120,6 +120,12 @@ class RasterDrawingStore {
   Future<void> _tileWork = Future<void>.value();
   bool _disposed = false;
 
+  /// The page as it stood before the blur being baked, one clone per tile. A
+  /// blur is baked tile by tile, and a tile that read its neighbour after the
+  /// neighbour had been softened saw different ink than the neighbour saw of
+  /// it, which left a visible seam along the tile boundary.
+  Map<RasterTileKey, ui.Image>? _blurSource;
+
   /// Called when tiles arrive that nobody asked for by name, so the editor can
   /// paint them. Set to a repaint notifier; it is called outside any queue,
   /// and never after [dispose].
@@ -457,8 +463,20 @@ class RasterDrawingStore {
           await _updateTileWithStrokes(entry.key, entry.value);
         }
         normalByTile.clear();
-        for (final key in _tilesTouchedBy(stroke, pageCount, blur: true)) {
-          await _updateTile(key, stroke);
+        final keys = _tilesTouchedBy(stroke, pageCount, blur: true).toList();
+        final snapshot = <RasterTileKey, ui.Image>{
+          for (final entry in tiles.entries) entry.key: entry.value.clone(),
+        };
+        _blurSource = snapshot;
+        try {
+          for (final key in keys) {
+            await _updateTile(key, stroke);
+          }
+        } finally {
+          _blurSource = null;
+          for (final image in snapshot.values) {
+            image.dispose();
+          }
         }
       } else {
         for (final key in _tilesTouchedBy(stroke, pageCount)) {
@@ -821,6 +839,21 @@ class RasterDrawingStore {
         if (clip.getBounds().isEmpty) continue;
         canvas.save();
         canvas.clipPath(clip);
+        // The live preview fades each pass over what is beneath it, so the
+        // ink under the clip is mixed with the softened copy rather than just
+        // covered by it. Covering leaves the sharp ink at full strength
+        // wherever the copy is fainter than it, which showed as hard-edged
+        // wedges of ink inside a committed blur that the preview never had.
+        // Taking `pass.$2` of what is there away first makes the draw below a
+        // true mix.
+        if (pass.$2 < 1.0) {
+          canvas.drawRect(
+            Offset.zero & bufferSize,
+            Paint()
+              ..color = Color.fromARGB((255 * pass.$2).round(), 0, 0, 0)
+              ..blendMode = BlendMode.dstOut,
+          );
+        }
         canvas.drawImage(
           softened,
           Offset.zero,
@@ -831,7 +864,7 @@ class RasterDrawingStore {
             // tiles have no paper to hide behind, so the bake has to drop that
             // ink the same way; fading it over the mark instead would leave
             // the committed stroke sharper than the one being drawn.
-            ..blendMode = pass.$2 >= 1.0 ? BlendMode.src : BlendMode.srcOver,
+            ..blendMode = pass.$2 >= 1.0 ? BlendMode.src : BlendMode.plus,
         );
         canvas.restore();
       }
@@ -870,11 +903,12 @@ class RasterDrawingStore {
     await _replaceTile(key, previous, cropRecorder, tileBounds.size);
   }
 
-  bool _hasSourceIn(Rect bounds, {required int page}) => tiles.entries.any(
-        (entry) =>
-            entry.key.page == page &&
-            _tileGlobalBounds(entry.key).overlaps(bounds),
-      );
+  bool _hasSourceIn(Rect bounds, {required int page}) =>
+      (_blurSource ?? tiles).entries.any(
+            (entry) =>
+                entry.key.page == page &&
+                _tileGlobalBounds(entry.key).overlaps(bounds),
+          );
 
   void _drawSourceTiles(
     Canvas canvas,
@@ -882,7 +916,7 @@ class RasterDrawingStore {
     required int page,
     required Rect sourceBounds,
   }) {
-    for (final entry in tiles.entries) {
+    for (final entry in (_blurSource ?? tiles).entries) {
       if (entry.key.page != page) continue;
       if (!_tileGlobalBounds(entry.key).overlaps(sourceBounds)) continue;
       canvas.drawImage(
