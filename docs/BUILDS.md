@@ -7,6 +7,22 @@ those bytes; a build that is not listed here has not been checked that way.
 Releases before v0.4.27 are recorded in their handoff notes rather than here;
 the ledger starts with the first build after this habit was asked for.
 
+## 0.4.45+49 - 2026-11-21T19:27:12Z
+
+- Commit `9469e6b`, annotated tag `v0.4.45` (tag object `f391e21`), release
+  run `44940642581` (success).
+- Android `Pennino-Android.apk`, 33,890,371 B, sha256
+  `1e509f1b0a616cefb933db2c6ad3a6ec255a76317a7209c01ec7fd05497b610a`.
+- Windows `Pennino-Windows-Setup.exe`, 10,922,040 B, sha256
+  `30e3faa12e1c8ed5805cbc8a0e28f8447689c6d617deecc6869ffba3fcef3e9d`.
+- Carries PR #96 (Drive sync reads duplicate `notes (N)` folders, ignores
+  unrelated JSON, writes `sync.log`) and PR #97 (blur: no tile-boundary seam,
+  no hard ink wedges, 14-step ramp).
+- `unzip -l`: only `arm64-v8a` and `armeabi-v7a` libraries. `aapt2`: versionCode
+  49, versionName 0.4.45. Signer certificate SHA-256
+  `f86428c3bbd47b522613ef6707b3ca57b24c06dc219fc50cf72a68b6a0285978`,
+  unchanged.
+
 ## 0.4.44+48 - 2026-11-17T20:58:59Z
 
 - Commit `16f7d1b`, annotated tag `v0.4.44` (tag object `10d9de1`), release
