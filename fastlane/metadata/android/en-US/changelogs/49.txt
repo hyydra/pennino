@@ -1,0 +1,1 @@
+Drive sync now picks up notes your phone saved into duplicate Drive folders, and no longer warns about unrelated JSON files. Blur no longer leaves a seam or hard ink edges, and fades more smoothly. Sync problems are written to sync.log in the notes folder.
